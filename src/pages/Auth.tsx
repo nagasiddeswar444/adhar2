@@ -39,6 +39,8 @@ const Auth = () => {
 
   // Aadhar form
   const [aadharNumber, setAadharNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -123,7 +125,21 @@ const Auth = () => {
     const ok = await verifyOtp(otp, aadharNumber);
     if (ok) {
       // Create account after OTP verification
-      await signup(aadharNumber, password);
+      // Use dummy values for personalInfo - can be collected in a separate form
+      await signup(
+        aadharNumber, 
+        password,
+        email || `${aadharNumber}@example.com`,
+        phone || '+91' + aadharNumber.slice(-10),
+        {
+          fullName: 'User',
+          dateOfBirth: '1990-01-01',
+          gender: 'Male',
+          address: 'Address',
+          state: 'State',
+          pincode: '000000'
+        }
+      );
       setVerified(true);
       setTimeout(() => navigate('/'), 1500);
     } else {

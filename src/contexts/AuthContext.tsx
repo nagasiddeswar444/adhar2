@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { authOperations, AadhaarRecord } from '@/lib/database';
 
 export interface AuthUser {
   id: string;
@@ -10,10 +11,11 @@ export interface AuthUser {
 
 interface AuthContextType {
   user: AuthUser | null;
+  aadhaarRecord: AadhaarRecord | null;
   isAuthenticated: boolean;
   isSecureVerified: boolean;
   login: (aadharNumber: string, password: string) => Promise<boolean>;
-  signup: (aadharNumber: string, password: string) => Promise<boolean>;
+  signup: (aadharNumber: string, password: string, email: string, phone: string, personalInfo: { fullName: string; dateOfBirth: string; gender: string; address: string; state: string; district?: string; city?: string; pincode: string }) => Promise<boolean>;
   sendOtp: (target: string, method: 'sms' | 'email') => Promise<boolean>;
   verifyOtp: (otp: string, phone?: string, email?: string) => Promise<boolean>;
   logout: () => void;
@@ -24,76 +26,120 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock user database using aadhar number as key
-const MOCK_USERS: Record<string, { password: string; user: AuthUser }> = {
-  '123456789012': {
-    password: 'password123',
-    user: {
-      id: 'USR001',
-      aadharNumber: '123456789012',
-      name: 'Rahul Sharma',
-      email: 'rahul@email.com',
-      phone: '+91 98765 43210',
-    },
-  },
-};
-
-// Mock OTP (always 123456)
+// Mock OTP (always 123456) - for demo purposes
 const MOCK_OTP = '123456';
 
 // Helper functions for localStorage
-const saveAuthToStorage = (user: AuthUser | null) => {
+const saveAuthToStorage = (user: AuthUser | null, aadhaarRecord: AadhaarRecord | null) => {
   if (user) {
     localStorage.setItem('aadhaar_auth_user', JSON.stringify(user));
+    if (aadhaarRecord) {
+      localStorage.setItem('aadhaar_record', JSON.stringify(aadhaarRecord));
+    }
   } else {
     localStorage.removeItem('aadhaar_auth_user');
+    localStorage.removeItem('aadhaar_record');
   }
 };
 
-const loadAuthFromStorage = (): AuthUser | null => {
+const loadAuthFromStorage = (): { user: AuthUser | null; aadhaarRecord: AadhaarRecord | null } => {
   try {
-    const stored = localStorage.getItem('aadhaar_auth_user');
-    return stored ? JSON.parse(stored) : null;
+    const storedUser = localStorage.getItem('aadhaar_auth_user');
+    const storedRecord = localStorage.getItem('aadhaar_record');
+    return {
+      user: storedUser ? JSON.parse(storedUser) : null,
+      aadhaarRecord: storedRecord ? JSON.parse(storedRecord) : null,
+    };
   } catch {
-    return null;
+    return { user: null, aadhaarRecord: null };
   }
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => loadAuthFromStorage());
+  const [user, setUser] = useState<AuthUser | null>(() => loadAuthFromStorage().user);
+  const [aadhaarRecord, setAadhaarRecord] = useState<AadhaarRecord | null>(() => loadAuthFromStorage().aadhaarRecord);
   const [isSecureVerified, setIsSecureVerified] = useState(false);
 
   // Save user to localStorage whenever it changes
   useEffect(() => {
-    saveAuthToStorage(user);
-  }, [user]);
+    saveAuthToStorage(user, aadhaarRecord);
+  }, [user, aadhaarRecord]);
 
   const login = useCallback(async (aadharNumber: string, password: string): Promise<boolean> => {
-    // Simulate API delay
-    await new Promise((r) => setTimeout(r, 800));
-    const entry = MOCK_USERS[aadharNumber];
-    if (entry && entry.password === password) {
-      setUser(entry.user);
-      return true;
+    try {
+      // Call database auth operation
+      const result = await authOperations.login(aadharNumber, password);
+      
+      if (result) {
+        const { user: dbUser, aadhaarRecord: record } = result;
+        
+        // Map database user to AuthUser format
+        const authUser: AuthUser = {
+          id: dbUser.id,
+          aadharNumber: aadharNumber,
+          email: dbUser.email,
+          phone: dbUser.phone,
+        };
+        
+        setUser(authUser);
+        setAadhaarRecord(record);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
     }
-    // Allow any aadhar/password combo for demo
-    const demoUser: AuthUser = {
-      id: `USR${Date.now().toString(36)}`,
-      aadharNumber,
-    };
-    setUser(demoUser);
-    return true;
   }, []);
 
-  const signup = useCallback(async (aadharNumber: string, _password: string): Promise<boolean> => {
-    await new Promise((r) => setTimeout(r, 800));
-    const newUser: AuthUser = {
-      id: `USR${Date.now().toString(36)}`,
-      aadharNumber,
-    };
-    MOCK_USERS[aadharNumber] = { password: _password, user: newUser };
-    setUser(newUser);
-    return true;
+  const signup = useCallback(async (
+    aadharNumber: string, 
+    password: string,
+    email: string,
+    phone: string,
+    personalInfo: {
+      fullName: string;
+      dateOfBirth: string;
+      gender: string;
+      address: string;
+      state: string;
+      district?: string;
+      city?: string;
+      pincode: string;
+    }
+  ): Promise<boolean> => {
+    try {
+      // Call database auth operation
+      const result = await authOperations.signup(
+        aadharNumber,
+        password,
+        email,
+        phone,
+        personalInfo
+      );
+      
+      if (result) {
+        const { user: dbUser, aadhaarRecord: record } = result;
+        
+        // Map database user to AuthUser format
+        const authUser: AuthUser = {
+          id: dbUser.id,
+          aadharNumber: aadharNumber,
+          email: dbUser.email,
+          phone: dbUser.phone,
+        };
+        
+        setUser(authUser);
+        setAadhaarRecord(record);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Signup error:', error);
+      return false;
+    }
   }, []);
 
   const sendOtp = useCallback(async (_target: string, _method: 'sms' | 'email'): Promise<boolean> => {
@@ -119,8 +165,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     setUser(null);
+    setAadhaarRecord(null);
     setIsSecureVerified(false);
-    saveAuthToStorage(null);
+    saveAuthToStorage(null, null);
   }, []);
 
   const secureVerify = useCallback(async (_password: string): Promise<boolean> => {
@@ -146,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
+        aadhaarRecord,
         isAuthenticated: !!user,
         isSecureVerified,
         login,

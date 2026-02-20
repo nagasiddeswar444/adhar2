@@ -145,7 +145,268 @@ export interface AnalyticsSummary {
   updated_at: string
 }
 
-// ============ USER OPERATIONS ============
+// ============ AUTH OPERATIONS (New schema) ============
+
+// Types for the new schema
+export interface AuthUser {
+  id: string
+  email: string
+  phone: string
+  password_hash: string
+  aadhaar_record_id: string | null
+  is_active: boolean
+  last_login: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AadhaarRecord {
+  id: string
+  user_id: string
+  aadhaar_number: string
+  full_name: string
+  date_of_birth: string
+  gender: string
+  address: string
+  state: string
+  district: string | null
+  city: string | null
+  pincode: string
+  locality: string | null
+  landmark: string | null
+  house_number: string | null
+  street: string | null
+  care_of: string | null
+  guardian_name: string | null
+  photo_url: string | null
+  fingerprint_status: string
+  iris_status: string
+  face_scan_status: string
+  last_biometric_update: string | null
+  biometric_expiry_date: string | null
+  enrollment_number: string | null
+  enrollment_date: string | null
+  registration_center: string | null
+  card_type: string
+  status: string
+  is_verified: boolean
+  verification_date: string | null
+  is_eid_linked: boolean
+  eid_number: string | null
+  mobile_verified: boolean
+  email_verified: boolean
+  created_at: string
+  updated_at: string
+}
+
+// Helper to hash password (client-side for demo - in production use server-side hashing)
+export const hashPassword = async (password: string): Promise<string> => {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export const authOperations = {
+  // Login with aadhar number and password
+  async login(aadhaarNumber: string, password: string): Promise<{ user: AuthUser; aadhaarRecord: AadhaarRecord } | null> {
+    // First, find the aadhaar record by aadhaar number
+    const { data: aadhaarData, error: aadhaarError } = await supabase
+      .from('aadhaar_records')
+      .select('*')
+      .eq('aadhaar_number', aadhaarNumber)
+      .single()
+    
+    if (aadhaarError || !aadhaarData) {
+      console.error('Aadhaar record not found:', aadhaarError)
+      return null
+    }
+
+    const aadhaarRecord = aadhaarData as AadhaarRecord
+
+    // Get the user associated with this aadhaar record
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', aadhaarRecord.user_id)
+      .single()
+    
+    if (userError || !userData) {
+      console.error('User not found:', userError)
+      return null
+    }
+
+    const user = userData as AuthUser
+
+    // Verify password hash
+    const passwordHash = await hashPassword(password)
+    if (user.password_hash !== passwordHash) {
+      console.error('Invalid password')
+      return null
+    }
+
+    // Check if user is active
+    if (!user.is_active) {
+      console.error('User account is inactive')
+      return null
+    }
+
+    // Update last login
+    await supabase
+      .from('users')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', user.id)
+
+    return { user, aadhaarRecord }
+  },
+
+  // Signup new user with aadhar number
+  async signup(
+    aadhaarNumber: string, 
+    password: string, 
+    email: string, 
+    phone: string,
+    personalInfo: {
+      fullName: string
+      dateOfBirth: string
+      gender: string
+      address: string
+      state: string
+      district?: string
+      city?: string
+      pincode: string
+    }
+  ): Promise<{ user: AuthUser; aadhaarRecord: AadhaarRecord } | null> {
+    const passwordHash = await hashPassword(password)
+
+    // Create user first
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .insert({
+        email,
+        phone,
+        password_hash: passwordHash,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+    
+    if (userError) {
+      console.error('Error creating user:', userError)
+      return null
+    }
+
+    const user = userData as AuthUser
+
+    // Create aadhaar record linked to user
+    const { data: aadhaarData, error: aadhaarError } = await supabase
+      .from('aadhaar_records')
+      .insert({
+        user_id: user.id,
+        aadhaar_number: aadhaarNumber,
+        full_name: personalInfo.fullName,
+        date_of_birth: personalInfo.dateOfBirth,
+        gender: personalInfo.gender,
+        address: personalInfo.address,
+        state: personalInfo.state,
+        district: personalInfo.district || null,
+        city: personalInfo.city || null,
+        pincode: personalInfo.pincode,
+        status: 'active',
+        is_verified: false,
+        is_eid_linked: false,
+        mobile_verified: false,
+        email_verified: false,
+        fingerprint_status: 'registered',
+        iris_status: 'registered',
+        face_scan_status: 'registered',
+        card_type: 'standard',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+    
+    if (aadhaarError) {
+      console.error('Error creating aadhaar record:', aadhaarError)
+      // Rollback user creation
+      await supabase.from('users').delete().eq('id', user.id)
+      return null
+    }
+
+    const aadhaarRecord = aadhaarData as AadhaarRecord
+
+    // Update user's aadhaar_record_id
+    await supabase
+      .from('users')
+      .update({ aadhaar_record_id: aadhaarRecord.id })
+      .eq('id', user.id)
+
+    return { user, aadhaarRecord }
+  },
+
+  // Get user by ID
+  async getUser(id: string): Promise<AuthUser | null> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single()
+    
+    if (error) return null
+    return data as AuthUser
+  },
+
+  // Get aadhaar record by ID
+  async getAadhaarRecord(id: string): Promise<AadhaarRecord | null> {
+    const { data, error } = await supabase
+      .from('aadhaar_records')
+      .select('*')
+      .eq('id', id)
+      .single()
+    
+    if (error) return null
+    return data as AadhaarRecord
+  },
+
+  // Check if aadhaar number exists
+  async aadhaarExists(aadhaarNumber: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('aadhaar_records')
+      .select('id')
+      .eq('aadhaar_number', aadhaarNumber)
+      .single()
+    
+    return !error && !!data
+  },
+
+  // Check if email exists
+  async emailExists(email: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single()
+    
+    return !error && !!data
+  },
+
+  // Check if phone exists
+  async phoneExists(phone: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone', phone)
+      .single()
+    
+    return !error && !!data
+  }
+}
+
+// ============ USER OPERATIONS (Legacy - kept for compatibility) ============
 
 export const userOperations = {
   async getUser(id: string): Promise<User | null> {
