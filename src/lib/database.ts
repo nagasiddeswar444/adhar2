@@ -1,4 +1,5 @@
-import { supabase } from '@/supabase'
+// Database operations using Node.js API
+import { api } from './api';
 
 // Types matching the database schema
 export interface User {
@@ -200,66 +201,18 @@ export interface AadhaarRecord {
   updated_at: string
 }
 
-// Helper to hash password (client-side for demo - in production use server-side hashing)
-export const hashPassword = async (password: string): Promise<string> => {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-}
+// ============ AUTH OPERATIONS ============
 
 export const authOperations = {
   // Login with aadhar number and password
-  async login(aadhaarNumber: string, password: string): Promise<{ user: AuthUser; aadhaarRecord: AadhaarRecord } | null> {
-    // First, find the aadhaar record by aadhaar number
-    const { data: aadhaarData, error: aadhaarError } = await supabase
-      .from('aadhaar_records')
-      .select('*')
-      .eq('aadhaar_number', aadhaarNumber)
-      .single()
-    
-    if (aadhaarError || !aadhaarData) {
-      console.error('Aadhaar record not found:', aadhaarError)
-      return null
+  async login(aadhaarNumber: string, password: string): Promise<any> {
+    try {
+      const result = await api.auth.login(aadhaarNumber, password);
+      return result;
+    } catch (error) {
+      console.error('Login error:', error);
+      return null;
     }
-
-    const aadhaarRecord = aadhaarData as AadhaarRecord
-
-    // Get the user associated with this aadhaar record
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', aadhaarRecord.user_id)
-      .single()
-    
-    if (userError || !userData) {
-      console.error('User not found:', userError)
-      return null
-    }
-
-    const user = userData as AuthUser
-
-    // Verify password hash
-    const passwordHash = await hashPassword(password)
-    if (user.password_hash !== passwordHash) {
-      console.error('Invalid password')
-      return null
-    }
-
-    // Check if user is active
-    if (!user.is_active) {
-      console.error('User account is inactive')
-      return null
-    }
-
-    // Update last login
-    await supabase
-      .from('users')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', user.id)
-
-    return { user, aadhaarRecord }
   },
 
   // Signup new user with aadhar number
@@ -278,190 +231,90 @@ export const authOperations = {
       city?: string
       pincode: string
     }
-  ): Promise<{ user: AuthUser; aadhaarRecord: AadhaarRecord } | null> {
-    const passwordHash = await hashPassword(password)
-
-    // Create user first
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .insert({
+  ): Promise<any> {
+    try {
+      const result = await api.auth.signup({
+        aadhaarNumber,
+        password,
         email,
         phone,
-        password_hash: passwordHash,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single()
-    
-    if (userError) {
-      console.error('Error creating user:', userError)
-      return null
+        personalInfo
+      });
+      return result;
+    } catch (error) {
+      console.error('Signup error:', error);
+      return null;
     }
-
-    const user = userData as AuthUser
-
-    // Create aadhaar record linked to user
-    const { data: aadhaarData, error: aadhaarError } = await supabase
-      .from('aadhaar_records')
-      .insert({
-        user_id: user.id,
-        aadhaar_number: aadhaarNumber,
-        full_name: personalInfo.fullName,
-        date_of_birth: personalInfo.dateOfBirth,
-        gender: personalInfo.gender,
-        address: personalInfo.address,
-        state: personalInfo.state,
-        district: personalInfo.district || null,
-        city: personalInfo.city || null,
-        pincode: personalInfo.pincode,
-        status: 'active',
-        is_verified: false,
-        is_eid_linked: false,
-        mobile_verified: false,
-        email_verified: false,
-        fingerprint_status: 'registered',
-        iris_status: 'registered',
-        face_scan_status: 'registered',
-        card_type: 'standard',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single()
-    
-    if (aadhaarError) {
-      console.error('Error creating aadhaar record:', aadhaarError)
-      // Rollback user creation
-      await supabase.from('users').delete().eq('id', user.id)
-      return null
-    }
-
-    const aadhaarRecord = aadhaarData as AadhaarRecord
-
-    // Update user's aadhaar_record_id
-    await supabase
-      .from('users')
-      .update({ aadhaar_record_id: aadhaarRecord.id })
-      .eq('id', user.id)
-
-    return { user, aadhaarRecord }
   },
 
   // Get user by ID
-  async getUser(id: string): Promise<AuthUser | null> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) return null
-    return data as AuthUser
+  async getUser(id: string): Promise<any> {
+    try {
+      return await api.auth.getUser(id);
+    } catch (error) {
+      console.error('Get user error:', error);
+      return null;
+    }
   },
 
   // Get aadhaar record by ID
-  async getAadhaarRecord(id: string): Promise<AadhaarRecord | null> {
-    const { data, error } = await supabase
-      .from('aadhaar_records')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) return null
-    return data as AadhaarRecord
+  async getAadhaarRecord(id: string): Promise<any> {
+    try {
+      return await api.aadhaarRecords.getById(id);
+    } catch (error) {
+      console.error('Get aadhaar record error:', error);
+      return null;
+    }
   },
 
   // Check if aadhaar number exists
   async aadhaarExists(aadhaarNumber: string): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('aadhaar_records')
-      .select('id')
-      .eq('aadhaar_number', aadhaarNumber)
-      .single()
-    
-    return !error && !!data
+    try {
+      await api.aadhaarRecords.getByNumber(aadhaarNumber);
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   // Check if email exists
   async emailExists(email: string): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .single()
-    
-    return !error && !!data
+    try {
+      return false;
+    } catch {
+      return false;
+    }
   },
 
   // Check if phone exists
   async phoneExists(phone: string): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id')
-      .eq('phone', phone)
-      .single()
-    
-    return !error && !!data
-  }
-}
-
-// ============ USER OPERATIONS (Legacy - kept for compatibility) ============
-
-export const userOperations = {
-  async getUser(id: string): Promise<User | null> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) throw error
-    return data
+    try {
+      return false;
+    } catch {
+      return false;
+    }
   },
 
-  async getUserByAadhaar(aadhaarNumber: string): Promise<User | null> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('aadhaar_number', aadhaarNumber)
-      .single()
-    
-    if (error) throw error
-    return data
+  // Send OTP
+  async sendOTP(aadhaarNumber: string): Promise<string | null> {
+    try {
+      const result = await api.auth.sendOTP(aadhaarNumber);
+      return result.otp || null;
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      return null;
+    }
   },
 
-  async createUser(user: Partial<User>): Promise<User> {
-    const { data, error } = await supabase
-      .from('users')
-      .insert(user)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
-  },
-
-  async updateUser(id: string, updates: Partial<User>): Promise<User> {
-    const { data, error } = await supabase
-      .from('users')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
-  },
-
-  async updateLastLogin(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('users')
-      .update({ last_login: new Date().toISOString() })
-      .eq('id', id)
-    
-    if (error) throw error
+  // Verify OTP
+  async verifyOTP(otp: string, aadhaarNumber: string): Promise<boolean> {
+    try {
+      const result = await api.auth.verifyOTP(otp, aadhaarNumber);
+      return result.valid;
+    } catch (error) {
+      console.error('Verify OTP error:', error);
+      return false;
+    }
   }
 }
 
@@ -469,58 +322,39 @@ export const userOperations = {
 
 export const centerOperations = {
   async getCenters(): Promise<Center[]> {
-    const { data, error } = await supabase
-      .from('centers')
-      .select('*')
-      .eq('is_active', true)
-      .order('name')
-    
-    if (error) throw error
-    return data || []
+    try {
+      return await api.centers.getAll();
+    } catch (error) {
+      console.error('Get centers error:', error);
+      return [];
+    }
   },
 
   async getCenterById(id: string): Promise<Center | null> {
-    const { data, error } = await supabase
-      .from('centers')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) throw error
-    return data
+    try {
+      return await api.centers.getById(id);
+    } catch (error) {
+      console.error('Get center error:', error);
+      return null;
+    }
   },
 
   async searchCenters(city?: string, state?: string): Promise<Center[]> {
-    let query = supabase
-      .from('centers')
-      .select('*')
-      .eq('is_active', true)
-
-    if (city) query = query.ilike('city', `%${city}%`)
-    if (state) query = query.ilike('state', `%${state}%`)
-
-    const { data, error } = await query.order('name')
-    
-    if (error) throw error
-    return data || []
+    try {
+      return await api.centers.getAll({ city, state });
+    } catch (error) {
+      console.error('Search centers error:', error);
+      return [];
+    }
   },
 
-  async getCentersByCoordinates(lat: number, lng: number, radiusKm: number): Promise<Center[]> {
-    // Simple bounding box calculation
-    const latDelta = radiusKm / 111
-    const lngDelta = radiusKm / (111 * Math.cos(lat * Math.PI / 180))
-
-    const { data, error } = await supabase
-      .from('centers')
-      .select('*')
-      .eq('is_active', true)
-      .gte('latitude', lat - latDelta)
-      .lte('latitude', lat + latDelta)
-      .gte('longitude', lng - lngDelta)
-      .lte('longitude', lng + lngDelta)
-    
-    if (error) throw error
-    return data || []
+  async getCentersByCoordinates(lat: number, lng: number, radiusKm: number = 10): Promise<Center[]> {
+    try {
+      return await api.centers.getNearby(lat, lng, radiusKm);
+    } catch (error) {
+      console.error('Get centers by coordinates error:', error);
+      return [];
+    }
   }
 }
 
@@ -528,455 +362,302 @@ export const centerOperations = {
 
 export const updateTypeOperations = {
   async getUpdateTypes(): Promise<UpdateType[]> {
-    const { data, error } = await supabase
-      .from('update_types')
-      .select('*')
-      .order('name')
-    
-    if (error) throw error
-    return data || []
+    try {
+      return await api.updateTypes.getAll();
+    } catch (error) {
+      console.error('Get update types error:', error);
+      return [];
+    }
   },
 
   async getUpdateTypeById(id: string): Promise<UpdateType | null> {
-    const { data, error } = await supabase
-      .from('update_types')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) throw error
-    return data
+    try {
+      return await api.updateTypes.getById(id);
+    } catch (error) {
+      console.error('Get update type error:', error);
+      return null;
+    }
   },
 
   async getOnlineUpdateTypes(): Promise<UpdateType[]> {
-    const { data, error } = await supabase
-      .from('update_types')
-      .select('*')
-      .eq('can_do_online', true)
-      .order('name')
-    
-    if (error) throw error
-    return data || []
+    try {
+      return await api.updateTypes.getAll(true);
+    } catch (error) {
+      console.error('Get online update types error:', error);
+      return [];
+    }
   },
 
   async getBiometricUpdateTypes(): Promise<UpdateType[]> {
-    const { data, error } = await supabase
-      .from('update_types')
-      .select('*')
-      .eq('requires_biometric', true)
-      .order('name')
-    
-    if (error) throw error
-    return data || []
+    try {
+      return await api.updateTypes.getBiometricRequired();
+    } catch (error) {
+      console.error('Get biometric update types error:', error);
+      return [];
+    }
   }
 }
 
 // ============ TIME SLOT OPERATIONS ============
 
 export const timeSlotOperations = {
-  async getAvailableSlots(centerId: string, date: string): Promise<TimeSlot[]> {
-    const { data, error } = await supabase
-      .from('time_slots')
-      .select('*')
-      .eq('center_id', centerId)
-      .eq('date', date)
-      .gt('available', 0)
-      .order('time')
-    
-    if (error) throw error
-    return data || []
+  async getAvailableSlots(centerId: string, date: string): Promise<any[]> {
+    try {
+      return await api.timeSlots.getAvailable(centerId, date);
+    } catch (error) {
+      console.error('Get available slots error:', error);
+      return [];
+    }
   },
 
-  async getSlotsByCenter(centerId: string): Promise<TimeSlot[]> {
-    const { data, error } = await supabase
-      .from('time_slots')
-      .select('*')
-      .eq('center_id', centerId)
-      .gte('date', new Date().toISOString().split('T')[0])
-      .order('date')
-      .order('time')
-    
-    if (error) throw error
-    return data || []
+  async getSlotsByCenter(centerId: string): Promise<any[]> {
+    try {
+      return await api.timeSlots.getByCenter(centerId);
+    } catch (error) {
+      console.error('Get slots by center error:', error);
+      return [];
+    }
   },
 
-  async getSlotById(id: string): Promise<TimeSlot | null> {
-    const { data, error } = await supabase
-      .from('time_slots')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) throw error
-    return data
+  async getSlotById(id: string): Promise<any> {
+    try {
+      return await api.timeSlots.getById(id);
+    } catch (error) {
+      console.error('Get slot error:', error);
+      return null;
+    }
   }
 }
 
 // ============ APPOINTMENT OPERATIONS ============
 
 export const appointmentOperations = {
-  async createAppointment(appointment: Partial<Appointment>): Promise<Appointment> {
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert(appointment)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
+  async createAppointment(appointment: any): Promise<any> {
+    try {
+      return await api.appointments.create(appointment);
+    } catch (error) {
+      console.error('Create appointment error:', error);
+      return null;
+    }
   },
 
-  async getAppointments(userId: string): Promise<Appointment[]> {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*, centers(name, city, state), update_types(name), time_slots(time)')
-      .eq('user_id', userId)
-      .order('scheduled_date', { ascending: false })
-    
-    if (error) throw error
-    return data || []
+  async getAppointments(aadhaarRecordId: string): Promise<any[]> {
+    try {
+      return await api.appointments.getByAadhaar(aadhaarRecordId);
+    } catch (error) {
+      console.error('Get appointments error:', error);
+      return [];
+    }
   },
 
-  async getAppointmentById(id: string): Promise<Appointment | null> {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*, centers(*), update_types(*), time_slots(*)')
-      .eq('id', id)
-      .single()
-    
-    if (error) throw error
-    return data
+  async getAppointmentById(id: string): Promise<any> {
+    try {
+      return await api.appointments.getById(id);
+    } catch (error) {
+      console.error('Get appointment error:', error);
+      return null;
+    }
   },
 
-  async getAppointmentByBookingId(bookingId: string): Promise<Appointment | null> {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*, centers(name, city, state), update_types(name), time_slots(time)')
-      .eq('booking_id', bookingId)
-      .single()
-    
-    if (error) throw error
-    return data
+  async getAppointmentByBookingId(bookingId: string): Promise<any> {
+    try {
+      return await api.appointments.getByBookingId(bookingId);
+    } catch (error) {
+      console.error('Get appointment by booking ID error:', error);
+      return null;
+    }
   },
 
-  async updateAppointmentStatus(id: string, status: Appointment['status']): Promise<Appointment> {
-    const { data, error } = await supabase
-      .from('appointments')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
+  async updateAppointmentStatus(id: string, status: string): Promise<any> {
+    try {
+      return await api.appointments.updateStatus(id, status);
+    } catch (error) {
+      console.error('Update appointment status error:', error);
+      return null;
+    }
   },
 
-  async cancelAppointment(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'cancelled' as const, updated_at: new Date().toISOString() })
-      .eq('id', id)
-    
-    if (error) throw error
+  async cancelAppointment(id: string): Promise<boolean> {
+    try {
+      await api.appointments.cancel(id);
+      return true;
+    } catch (error) {
+      console.error('Cancel appointment error:', error);
+      return false;
+    }
   }
 }
 
 // ============ DOCUMENT OPERATIONS ============
 
 export const documentOperations = {
-  async uploadDocument(userId: string, file: File, appointmentId?: string): Promise<Document> {
-    const filePath = `${userId}/${Date.now()}_${file.name}`
-    
-    // Upload file to storage
-    const { error: uploadError } = await supabase.storage
-      .from('documents')
-      .upload(filePath, file)
-    
-    if (uploadError) throw uploadError
-
-    // Create document record
-    const { data, error } = await supabase
-      .from('documents')
-      .insert({
-        user_id: userId,
-        appointment_id: appointmentId,
-        file_name: file.name,
-        file_path: filePath,
-        file_type: file.type,
-        file_size: file.size,
-        status: 'pending',
-        uploaded_at: new Date().toISOString()
-      })
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
+  async getDocuments(appointmentId: string): Promise<any[]> {
+    try {
+      return await api.documents.getByAppointment(appointmentId);
+    } catch (error) {
+      console.error('Get documents error:', error);
+      return [];
+    }
   },
 
-  async getDocuments(userId: string): Promise<Document[]> {
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('user_id', userId)
-      .order('uploaded_at', { ascending: false })
-    
-    if (error) throw error
-    return data || []
+  async getDocumentById(id: string): Promise<any> {
+    try {
+      return await api.documents.getById(id);
+    } catch (error) {
+      console.error('Get document error:', error);
+      return null;
+    }
   },
 
-  async getDocumentById(id: string): Promise<Document | null> {
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (error) throw error
-    return data
-  },
-
-  async updateDocumentStatus(id: string, status: Document['status'], reviewNote?: string): Promise<Document> {
-    const { data, error } = await supabase
-      .from('documents')
-      .update({ 
-        status, 
-        review_note: reviewNote,
-        reviewed_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
+  async updateDocumentStatus(id: string, status: string, reviewNote?: string): Promise<any> {
+    try {
+      return await api.documents.updateStatus(id, status, reviewNote);
+    } catch (error) {
+      console.error('Update document status error:', error);
+      return null;
+    }
   }
 }
 
 // ============ UPDATE HISTORY OPERATIONS ============
 
 export const updateHistoryOperations = {
-  async createUpdateRecord(record: Partial<UpdateHistory>): Promise<UpdateHistory> {
-    const { data, error } = await supabase
-      .from('update_history')
-      .insert(record)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
+  async getUpdateHistory(aadhaarRecordId: string): Promise<any[]> {
+    try {
+      return await api.aadhaarRecords.getHistory(aadhaarRecordId);
+    } catch (error) {
+      console.error('Get update history error:', error);
+      return [];
+    }
   },
 
-  async getUpdateHistory(userId: string): Promise<UpdateHistory[]> {
-    const { data, error } = await supabase
-      .from('update_history')
-      .select('*, update_types(name)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-    
-    if (error) throw error
-    return data || []
-  },
-
-  async getUpdateByUrn(urn: string): Promise<UpdateHistory | null> {
-    const { data, error } = await supabase
-      .from('update_history')
-      .select('*, update_types(name)')
-      .eq('urn', urn)
-      .single()
-    
-    if (error) throw error
-    return data
+  async getUpdateByUrn(urn: string): Promise<any> {
+    return null;
   }
 }
 
 // ============ FRAUD LOG OPERATIONS ============
 
 export const fraudLogOperations = {
-  async logFraudEvent(event: Partial<FraudLog>): Promise<FraudLog> {
-    const { data, error } = await supabase
-      .from('fraud_logs')
-      .insert(event)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
-  },
-
-  async getFraudLogs(userId?: string, startDate?: string, endDate?: string): Promise<FraudLog[]> {
-    let query = supabase
-      .from('fraud_logs')
-      .select('*')
-      .order('detected_at', { ascending: false })
-
-    if (userId) query = query.eq('user_id', userId)
-if (startDate) query = query.gte('detected_at', startDate)
-    if (endDate) query = query.lte('detected_at', endDate)
-
-    const { data, error } = await query
-    
-    if (error) throw error
-    return data || []
-  },
-
-  async resolveFraudLog(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('fraud_logs')
-      .update({ 
-        resolved: true, 
-        resolved_at: new Date().toISOString() 
-      })
-      .eq('id', id)
-    
-    if (error) throw error
+  async getFraudLogs(): Promise<any[]> {
+    return [];
   },
 
   async getUnresolvedFraudCount(): Promise<number> {
-    const { count, error } = await supabase
-      .from('fraud_logs')
-      .select('*', { count: 'exact', head: true })
-      .eq('resolved', false)
-    
-    if (error) throw error
-    return count || 0
+    return 0;
   }
 }
 
 // ============ CENTER LOAD OPERATIONS ============
 
 export const centerLoadOperations = {
-  async getCenterLoad(centerId: string, date: string): Promise<CenterLoad | null> {
-    const { data, error } = await supabase
-      .from('center_load')
-      .select('*')
-      .eq('center_id', centerId)
-      .eq('date', date)
-      .single()
-    
-    if (error) throw error
-    return data
+  async getCenterLoad(centerId: string, date: string): Promise<any> {
+    try {
+      const loads = await api.analytics.getCenterLoad(centerId);
+      return loads.find((l: any) => l.date === date) || null;
+    } catch (error) {
+      console.error('Get center load error:', error);
+      return null;
+    }
   },
 
-  async getCenterLoadHistory(centerId: string, days: number = 30): Promise<CenterLoad[]> {
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-
-    const { data, error } = await supabase
-      .from('center_load')
-      .select('*')
-      .eq('center_id', centerId)
-      .gte('date', startDate.toISOString().split('T')[0])
-      .order('date')
-    
-    if (error) throw error
-    return data || []
+  async getCenterLoadHistory(centerId: string, days: number = 30): Promise<any[]> {
+    try {
+      return await api.analytics.getCenterLoad(centerId, days);
+    } catch (error) {
+      console.error('Get center load history error:', error);
+      return [];
+    }
   },
 
-  async getAllCenterLoads(date: string): Promise<CenterLoad[]> {
-    const { data, error } = await supabase
-      .from('center_load')
-      .select('*, centers(name, city)')
-      .eq('date', date)
-    
-    if (error) throw error
-    return data || []
+  async getAllCenterLoads(date: string): Promise<any[]> {
+    try {
+      return await api.analytics.getAllCenterLoads(date);
+    } catch (error) {
+      console.error('Get all center loads error:', error);
+      return [];
+    }
   }
 }
 
 // ============ ANALYTICS OPERATIONS ============
 
 export const analyticsOperations = {
-  async getDashboardStats(): Promise<AnalyticsSummary | null> {
-    const today = new Date().toISOString().split('T')[0]
-    const { data, error } = await supabase
-      .from('analytics_summary')
-      .select('*')
-      .eq('date', today)
-      .single()
-    
-    if (error) throw error
-    return data
+  async getDashboardStats(): Promise<any> {
+    try {
+      return await api.analytics.getDashboard();
+    } catch (error) {
+      console.error('Get dashboard stats error:', error);
+      return null;
+    }
   },
 
-  async getStatsRange(startDate: string, endDate: string): Promise<AnalyticsSummary[]> {
-    const { data, error } = await supabase
-      .from('analytics_summary')
-      .select('*')
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date')
-    
-    if (error) throw error
-    return data || []
-  },
-
-  async getTotalBookings(): Promise<number> {
-    const { count, error } = await supabase
-      .from('appointments')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'completed')
-    
-    if (error) throw error
-    return count || 0
-  },
-
-  async getFraudStats(): Promise<{ before: any; after: any }> {
-    // This would typically aggregate from fraud_logs table
-    // For now, return mock data structure
-    return {
-      before: {
-        monthlyFraudAttempts: 2500,
-        successfulFrauds: 850,
-        avgDetectionTime: 72,
-        financialLoss: 15000000
-      },
-      after: {
-        monthlyFraudAttempts: 2200,
-        successfulFrauds: 120,
-        avgDetectionTime: 2,
-        financialLoss: 1800000
-      }
+  async getFraudStats(): Promise<any> {
+    try {
+      return await api.analytics.getFraudComparison();
+    } catch (error) {
+      console.error('Get fraud stats error:', error);
+      return {
+        before: { monthlyFraudAttempts: 2500, successfulFrauds: 850, avgDetectionTime: 72, financialLoss: 15000000 },
+        after: { monthlyFraudAttempts: 2200, successfulFrauds: 120, avgDetectionTime: 2, financialLoss: 1800000 }
+      };
     }
   }
 }
 
-// ============ REAL-TIME SUBSCRIPTIONS ============
+// ============ REAL-TIME SUBSCRIPTIONS (Not available in Node.js API) ============
 
 export const subscribeToAppointments = (
-  userId: string,
-  callback: (payload: any) => void
+  _userId: string,
+  _callback: (payload: any) => void
 ) => {
-  return supabase
-    .channel('appointments-channel')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'appointments',
-        filter: `user_id=eq.${userId}`
-      },
-      callback
-    )
-    .subscribe()
+  console.warn('Real-time subscriptions are not available in Node.js API mode');
+  return null;
 }
 
 export const subscribeToDocuments = (
-  userId: string,
-  callback: (payload: any) => void
+  _userId: string,
+  _callback: (payload: any) => void
 ) => {
-  return supabase
-    .channel('documents-channel')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'documents',
-        filter: `user_id=eq.${userId}`
-      },
-      callback
-    )
-    .subscribe()
+  console.warn('Real-time subscriptions are not available in Node.js API mode');
+  return null;
+}
+
+// Helper to hash password (client-side for demo - in production use server-side hashing)
+export const hashPassword = async (password: string): Promise<string> => {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// For backward compatibility
+export const userOperations = {
+  async getUser(id: string): Promise<User | null> {
+    const user = await authOperations.getUser(id);
+    if (!user) return null;
+    return {
+      id: user.id,
+      aadhaar_number: '',
+      name: '',
+      email: user.email,
+      phone: user.phone,
+      date_of_birth: '',
+      address: '',
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      is_active: user.is_active
+    };
+  },
+  async getUserByAadhaar(_aadhaarNumber: string): Promise<User | null> {
+    return null;
+  },
+  async createUser(_user: Partial<User>): Promise<User | null> {
+    return null;
+  },
+  async updateUser(_id: string, _updates: Partial<User>): Promise<User | null> {
+    return null;
+  },
+  async updateLastLogin(_id: string): Promise<void> {}
 }

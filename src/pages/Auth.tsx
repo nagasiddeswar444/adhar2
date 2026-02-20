@@ -307,6 +307,22 @@ const Auth = () => {
                   <p className="text-xs text-muted-foreground mt-1">Enter your 12-digit Aadhar number</p>
                 </div>
 
+                {/* Email for signup */}
+                {mode === 'signup' && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1.5 block">
+                      Email Address
+                    </label>
+                    <Input 
+                      type="email" 
+                      placeholder="your@email.com" 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Enter your email address</p>
+                  </div>
+                )}
+
                 {/* Password */}
                 <div>
                   <label className="text-sm font-medium text-foreground mb-1.5 block">

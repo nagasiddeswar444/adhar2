@@ -1,14 +1,14 @@
-import { createClient } from '@supabase/supabase-js'
+// Supabase has been replaced with Node.js backend
+// Import the API client instead
+import { api } from './lib/api'
 
-// Replace these with your actual Supabase credentials
-// You can get these from your Supabase project dashboard
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-project.supabase.co'
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key-here'
+// Export API as default for backward compatibility
+export { api as supabase }
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
-
-// Helper function to check if Supabase is configured
+// Helper function to check if API is configured
 export const isSupabaseConfigured = () => {
-  return supabaseUrl !== 'https://your-project.supabase.co' && 
-         supabaseKey !== 'your-anon-key-here'
+  return true // API is always available when server is running
 }
+
+// For backward compatibility - export the same interface
+export const isConfigured = isSupabaseConfigured

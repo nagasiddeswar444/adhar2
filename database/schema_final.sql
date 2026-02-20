@@ -72,6 +72,7 @@ CREATE TABLE aadhaar_records (
   -- Contact Information (from UIDAI records)
   phone VARCHAR(20),
   
+  
   -- Contact Verification
   mobile_verified BOOLEAN DEFAULT FALSE,
   email_verified BOOLEAN DEFAULT FALSE,
