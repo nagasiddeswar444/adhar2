@@ -158,14 +158,14 @@ router.post('/signup', async (req, res) => {
 
     await connection.commit();
 
-    // Send verification email with OTP (async - don't wait for it)
+    // Send verification email with link (async - don't wait for it)
     sendVerificationEmail(email, personalInfo?.fullName || 'User', emailVerificationToken)
       .catch(err => console.error('Failed to send verification email:', err));
 
-    // Also send OTP to email for verification
-    const otpResult = await sendOTP(aadhaarNumber, 'email', 'email_verification');
+    // Send OTP to MOBILE PHONE (SMS) for verification - THIS IS THE KEY CHANGE
+    const otpResult = await sendOTP(aadhaarNumber, 'sms', 'mobile_verification');
     if (otpResult.success) {
-      await sendOTPEmail(email, otpResult.otp, 'email_verification');
+      await sendOTPSMS(phone, `Your Aadhaar Advance verification OTP is: ${otpResult.otp}`);
     }
 
     // Send welcome email (async)
@@ -177,11 +177,10 @@ router.post('/signup', async (req, res) => {
       .catch(err => console.error('Failed to send welcome SMS:', err));
 
     res.status(201).json({
-      message: 'User created successfully. Please verify your email using the OTP sent to your email.',
+      message: 'User created successfully. Please verify your mobile using the OTP sent to your phone.',
       user: { id: userId, email, phone },
       aadhaarRecord: { id: aadhaarRecordId, aadhaar_number: aadhaarNumber },
-      emailVerificationSent: true,
-      otpSentToEmail: true
+      otpSentToMobile: true
     });
   } catch (error) {
     await connection.rollback();
@@ -192,7 +191,7 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-// Send OTP endpoint - supports both SMS and Email
+// Send OTP endpoint - defaults to SMS (mobile number)
 router.post('/send-otp', async (req, res) => {
   try {
     const { aadhaarNumber, method = 'sms', type = 'login' } = req.body;
@@ -211,7 +210,7 @@ router.post('/send-otp', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Generate and send OTP via the selected method
+    // Generate and send OTP via the selected method (default is SMS/mobile)
     const result = await sendOTP(aadhaarNumber, method, type);
 
     if (result.success) {
@@ -220,7 +219,7 @@ router.post('/send-otp', async (req, res) => {
         const user = aadhaarRecords[0];
         await sendOTPEmail(user.email, result.otp, type === 'password_reset' ? 'password_reset' : type === 'email_verification' ? 'email_verification' : 'login');
       } else if (method === 'sms') {
-        // For SMS, use the phone from the request or from the database
+        // For SMS, use the phone from the aadhaar_records (this is the mobile number from UIDAI)
         const phone = aadhaarRecords[0]?.phone || req.body.phone;
         if (phone) {
           await sendOTPSMS(phone, result.otp);
@@ -254,6 +253,13 @@ router.post('/verify-otp', async (req, res) => {
     const result = await verifyOTP(aadhaarNumber, otp, type);
 
     if (result.valid) {
+      // If verifying mobile OTP, also mark mobile as verified
+      if (type === 'mobile_verification') {
+        await pool.execute(
+          'UPDATE aadhaar_records SET mobile_verified = TRUE WHERE aadhaar_number = ?',
+          [aadhaarNumber]
+        );
+      }
       // If verifying email OTP, also mark email as verified
       if (type === 'email_verification') {
         await pool.execute(
@@ -272,7 +278,7 @@ router.post('/verify-otp', async (req, res) => {
   }
 });
 
-// Verify email endpoint (with link - also sends OTP)
+// Verify email endpoint (with link - also sends OTP to mobile)
 router.get('/verify-email', async (req, res) => {
   try {
     const { token } = req.query;
@@ -298,24 +304,26 @@ router.get('/verify-email', async (req, res) => {
       return res.json({ message: 'Email already verified' });
     }
 
-    // Get user email
+    // Get user details
     const [users] = await pool.execute(
-      'SELECT email FROM users WHERE id = ?',
+      'SELECT email, phone FROM users WHERE id = ?',
       [aadhaarRecord.user_id]
     );
 
     if (users.length > 0) {
-      // Send OTP to email for verification
-      const otpResult = await sendOTP(aadhaarRecord.aadhaar_number, 'email', 'email_verification');
+      const user = users[0];
+      
+      // Send OTP to MOBILE PHONE for verification
+      const otpResult = await sendOTP(aadhaarRecord.aadhaar_number, 'sms', 'mobile_verification');
       if (otpResult.success) {
-        await sendOTPEmail(users[0].email, otpResult.otp, 'email_verification');
+        await sendOTPSMS(user.phone, `Your Aadhaar Advance email verification OTP is: ${otpResult.otp}`);
       }
 
       // Return success with OTP for verification (in development)
       res.json({ 
-        message: 'Verification OTP sent to your email. Please enter the OTP to verify.',
+        message: 'Verification OTP sent to your mobile number. Please enter the OTP to verify.',
         emailVerified: false,
-        otpSent: true,
+        otpSentToMobile: true,
         ...(process.env.NODE_ENV === 'development' && { otp: otpResult.otp })
       });
     } else {
@@ -337,7 +345,7 @@ router.post('/verify-email-otp', async (req, res) => {
     }
 
     // Verify the OTP
-    const otpResult = await verifyOTP(aadhaarNumber, otp, 'email_verification');
+    const otpResult = await verifyOTP(aadhaarNumber, otp, 'mobile_verification');
     
     if (!otpResult.valid) {
       return res.status(400).json({ error: otpResult.error });
@@ -356,7 +364,7 @@ router.post('/verify-email-otp', async (req, res) => {
   }
 });
 
-// Resend verification email
+// Resend verification - sends OTP to mobile
 router.post('/resend-verification', async (req, res) => {
   try {
     const { email, aadhaarNumber } = req.body;
@@ -370,7 +378,7 @@ router.post('/resend-verification', async (req, res) => {
     if (aadhaarNumber) {
       // Find by aadhaar number
       const [records] = await pool.execute(
-        'SELECT ar.*, u.email FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
+        'SELECT ar.*, u.email, u.phone FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
         [aadhaarNumber]
       );
       
@@ -420,20 +428,23 @@ router.post('/resend-verification', async (req, res) => {
     // Send verification email with link
     await sendVerificationEmail(email, aadhaarRecord.full_name || 'User', newToken);
 
-    // Also send OTP to email
-    const otpResult = await sendOTP(aadhaarNumber || aadhaarRecord.aadhaar_number, 'email', 'email_verification');
-    if (otpResult.success) {
-      await sendOTPEmail(email, otpResult.otp, 'email_verification');
+    // Also send OTP to MOBILE PHONE
+    const phone = aadhaarRecord.phone || (user ? user.phone : null);
+    if (phone) {
+      const otpResult = await sendOTP(aadhaarNumber || aadhaarRecord.aadhaar_number, 'sms', 'mobile_verification');
+      if (otpResult.success) {
+        await sendOTPSMS(phone, `Your Aadhaar Advance verification OTP is: ${otpResult.otp}`);
+      }
     }
 
-    res.json({ message: 'Verification email and OTP sent successfully' });
+    res.json({ message: 'Verification email and OTP sent to mobile successfully' });
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Password reset request
+// Password reset request - OTP goes to mobile by default
 router.post('/forgot-password', async (req, res) => {
   try {
     const { aadhaarNumber, method = 'sms' } = req.body;
@@ -450,23 +461,24 @@ router.post('/forgot-password', async (req, res) => {
 
     if (aadhaarRecords.length === 0) {
       // Don't reveal that the user doesn't exist
-      return res.json({ message: 'If the account exists, a password reset OTP has been sent' });
+      return res.json({ message: 'If the account exists, a password reset OTP has been sent to mobile' });
     }
 
     const user = aadhaarRecords[0];
 
-    // Generate and send OTP
+    // Generate and send OTP - default to SMS (mobile)
     const result = await sendOTP(aadhaarNumber, method, 'password_reset');
 
     if (result.success) {
       if (method === 'email') {
         await sendOTPEmail(user.email, result.otp, 'password_reset');
       } else if (method === 'sms') {
-        await sendOTPSMS(user.phone, result.otp);
+        // Send to mobile number from aadhaar_records
+        await sendOTPSMS(user.phone, `Your Aadhaar Advance password reset OTP is: ${result.otp}`);
       }
     }
 
-    res.json({ message: 'If the account exists, a password reset OTP has been sent' });
+    res.json({ message: 'If the account exists, a password reset OTP has been sent to your mobile' });
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ error: 'Internal server error' });
