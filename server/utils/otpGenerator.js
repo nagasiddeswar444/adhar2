@@ -10,7 +10,7 @@ const generateOTP = () => {
 };
 
 // Store OTP in database
-const storeOTP = async (aadhaarNumber, otp, type = 'login', expiresInMinutes = 10) => {
+const storeOTP = async (aadhaarNumber, otp, type = 'login', expiresInMinutes = 1.5) => {
   const id = uuidv4();
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
@@ -71,8 +71,8 @@ const verifyOTP = async (aadhaarNumber, otp, type = 'login') => {
 const sendOTP = async (aadhaarNumber, method = 'sms', type = 'login', phoneNumber = null) => {
   const otp = generateOTP();
 
-  // Store OTP in database
-  await storeOTP(aadhaarNumber, otp, type);
+  // Store OTP in database with 1:30 minute expiration
+  await storeOTP(aadhaarNumber, otp, type, 1.5);
 
   // Get user email/phone for sending
   let user = null;
