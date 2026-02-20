@@ -12,9 +12,11 @@ import { SecurityGate } from '@/components/auth/SecurityGate';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { type Center, type TimeSlot, type UpdateType, timeSlots, centers } from '@/data/mockData';
+import { dataService } from '@/lib/dataService';
 import { ChevronLeft, ChevronRight, Check, Calendar, MapPin, FileEdit, Bot, Sparkles, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useUser } from '@/contexts/UserContext';
 
 type Step = 'center' | 'update' | 'slot' | 'confirm' | 'online';
 
