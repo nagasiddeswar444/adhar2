@@ -25,10 +25,11 @@ CREATE TABLE users (
 
 -- ============================================================================
 -- AADHAAR RECORDS TABLE (All personal & Aadhaar information)
+-- Can exist WITHOUT a user account (for pre-seeded UIDAI records)
 -- ============================================================================
 CREATE TABLE aadhaar_records (
   id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-  user_id CHAR(36) UNIQUE NOT NULL, -- 1:1 relationship with users
+  user_id CHAR(36) UNIQUE, -- Can be NULL for records not yet linked to app users
   aadhaar_number VARCHAR(12) UNIQUE NOT NULL,
   
   -- Personal Information
