@@ -193,6 +193,7 @@ export interface AadhaarRecord {
   verification_date: string | null
   is_eid_linked: boolean
   eid_number: string | null
+  phone: string | null
   mobile_verified: boolean
   email_verified: boolean
   created_at: string
