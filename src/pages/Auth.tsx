@@ -25,7 +25,7 @@ const generateCaptcha = () => {
   return code;
 };
 
-type AuthMode = 'signin' | 'signup';
+type AuthMode = 'signin' | 'signup' | 'forgotPassword' | 'resetPassword';
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -100,7 +100,9 @@ const Auth = () => {
     try {
       // For signup, send OTP first
       if (mode === 'signup') {
-        await sendOtp(aadharNumber, 'sms');
+        // Format phone number with country code if not provided
+        const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+        await sendOtp(aadharNumber, 'sms', 'mobile_verification', formattedPhone);
         setOtpSent(true);
         setOtpTimer(30);
       } else {
@@ -441,15 +443,35 @@ const Auth = () => {
             )}
 
             {/* Footer */}
-            <div className="mt-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                {mode === 'signin' ? t('auth.noAccount') : t('auth.hasAccount')}{' '}
+            <div className="mt-6 text-center space-y-2">
+              {mode === 'signin' && (
                 <button
-                  className="text-primary font-medium hover:underline"
-                  onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setOtpSent(false); }}
+                  className="text-sm text-primary font-medium hover:underline block w-full"
+                  onClick={() => { setMode('forgotPassword'); setError(''); setOtpSent(false); }}
                 >
-                  {mode === 'signin' ? t('auth.signUp') : t('auth.signIn')}
+                  Forgot Password?
                 </button>
+              )}
+              <p className="text-sm text-muted-foreground">
+                {mode === 'signin' ? t('auth.noAccount') : mode === 'forgotPassword' || mode === 'resetPassword' ? (
+                  <>
+                    Remember your password?{' '}
+                    <button
+                      className="text-primary font-medium hover:underline"
+                      onClick={() => { setMode('signin'); setError(''); setOtpSent(false); }}
+                    >
+                      Sign In
+                    </button>
+                  </>
+                ) : t('auth.hasAccount')}{' '}
+                {mode !== 'forgotPassword' && mode !== 'resetPassword' && (
+                  <button
+                    className="text-primary font-medium hover:underline"
+                    onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setOtpSent(false); }}
+                  >
+                    {mode === 'signin' ? t('auth.signUp') : t('auth.signIn')}
+                  </button>
+                )}
               </p>
             </div>
 

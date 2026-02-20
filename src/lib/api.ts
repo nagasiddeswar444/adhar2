@@ -61,21 +61,52 @@ class ApiClient {
         city?: string;
         pincode: string;
       };
-    }) => this.request('/auth/signup', { method: 'POST', body: data }),
+    }) => this.request<{ message: string; user: any; aadhaarRecord: any; otpSentToMobile?: boolean }>('/auth/signup', { method: 'POST', body: data }),
 
-    sendOTP: (aadhaarNumber: string, method: 'sms' | 'email' = 'sms') =>
-      this.request<{ message: string; otp?: string }>('/auth/send-otp', {
+    sendOTP: (aadhaarNumber: string, method: 'sms' | 'email' = 'sms', type: string = 'login', phone?: string) =>
+      this.request<{ message: string; otp?: string; method: string }>('/auth/send-otp', {
+        method: 'POST',
+        body: { aadhaarNumber, method, type, phone },
+      }),
+
+    verifyOTP: (otp: string, aadhaarNumber: string, type: string = 'login') =>
+      this.request<{ valid: boolean; message?: string }>('/auth/verify-otp', {
+        method: 'POST',
+        body: { otp, aadhaarNumber, type },
+      }),
+
+    getUser: (id: string) => this.request<any>(`/auth/user/${id}`),
+
+    // Password reset endpoints
+    forgotPassword: (aadhaarNumber: string, method: 'sms' | 'email' = 'sms') =>
+      this.request<{ message: string }>('/auth/forgot-password', {
         method: 'POST',
         body: { aadhaarNumber, method },
       }),
 
-    verifyOTP: (otp: string, aadhaarNumber: string) =>
-      this.request<{ valid: boolean }>('/auth/verify-otp', {
+    resetPassword: (aadhaarNumber: string, otp: string, newPassword: string) =>
+      this.request<{ message: string }>('/auth/reset-password', {
         method: 'POST',
-        body: { otp, aadhaarNumber },
+        body: { aadhaarNumber, otp, newPassword },
       }),
 
-    getUser: (id: string) => this.request<any>(`/auth/user/${id}`),
+    // Email verification endpoints
+    verifyEmail: (token: string) =>
+      this.request<{ message: string; emailVerified: boolean; otpSentToMobile?: boolean; otp?: string }>('/auth/verify-email?token=' + token, {
+        method: 'GET',
+      }),
+
+    verifyEmailOTP: (aadhaarNumber: string, otp: string) =>
+      this.request<{ message: string }>('/auth/verify-email-otp', {
+        method: 'POST',
+        body: { aadhaarNumber, otp },
+      }),
+
+    resendVerification: (email?: string, aadhaarNumber?: string) =>
+      this.request<{ message: string }>('/auth/resend-verification', {
+        method: 'POST',
+        body: { email, aadhaarNumber },
+      }),
   };
 
   // ============ CENTERS ============

@@ -296,24 +296,85 @@ export const authOperations = {
   },
 
   // Send OTP
-  async sendOTP(aadhaarNumber: string): Promise<string | null> {
+  async sendOTP(aadhaarNumber: string, method: 'sms' | 'email' = 'sms', type: string = 'login', phone?: string): Promise<{ otp: string | null; message: string }> {
     try {
-      const result = await api.auth.sendOTP(aadhaarNumber);
-      return result.otp || null;
+      const result = await api.auth.sendOTP(aadhaarNumber, method, type, phone);
+      return { otp: result.otp || null, message: result.message };
     } catch (error) {
       console.error('Send OTP error:', error);
-      return null;
+      return { otp: null, message: 'Failed to send OTP' };
     }
   },
 
   // Verify OTP
-  async verifyOTP(otp: string, aadhaarNumber: string): Promise<boolean> {
+  async verifyOTP(otp: string, aadhaarNumber: string, type: string = 'login'): Promise<{ valid: boolean; message?: string }> {
     try {
-      const result = await api.auth.verifyOTP(otp, aadhaarNumber);
-      return result.valid;
+      const result = await api.auth.verifyOTP(otp, aadhaarNumber, type);
+      return { valid: result.valid, message: result.message };
     } catch (error) {
       console.error('Verify OTP error:', error);
-      return false;
+      return { valid: false, message: 'Failed to verify OTP' };
+    }
+  },
+
+  // Forgot password - send reset OTP
+  async forgotPassword(aadhaarNumber: string, method: 'sms' | 'email' = 'sms'): Promise<{ success: boolean; message: string }> {
+    try {
+      const result = await api.auth.forgotPassword(aadhaarNumber, method);
+      return { success: true, message: result.message };
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      return { success: false, message: 'Failed to send password reset OTP' };
+    }
+  },
+
+  // Reset password with OTP
+  async resetPassword(aadhaarNumber: string, otp: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const result = await api.auth.resetPassword(aadhaarNumber, otp, newPassword);
+      return { success: true, message: result.message };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return { success: false, message: 'Failed to reset password' };
+    }
+  },
+
+  // Resend verification
+  async resendVerification(email?: string, aadhaarNumber?: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const result = await api.auth.resendVerification(email, aadhaarNumber);
+      return { success: true, message: result.message };
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      return { success: false, message: 'Failed to resend verification' };
+    }
+  },
+
+  // Verify email with token
+  async verifyEmail(token: string): Promise<{ success: boolean; message: string; emailVerified: boolean; otpSentToMobile?: boolean; otp?: string }> {
+    try {
+      const result = await api.auth.verifyEmail(token);
+      return { 
+        success: true, 
+        message: result.message, 
+        emailVerified: result.emailVerified,
+        otpSentToMobile: result.otpSentToMobile,
+        otp: result.otp
+      };
+    } catch (error) {
+      console.error('Verify email error:', error);
+      return { success: false, message: 'Failed to verify email', emailVerified: false };
+    }
+  },
+
+  // Verify email with OTP (after clicking email link)
+  async verifyEmailOTP(aadhaarNumber: string, otp: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const result = await api.auth.verifyEmailOTP(aadhaarNumber, otp);
+      return { success: true, message: result.message };
+    } catch (error) {
+      console.error('Verify email OTP error:', error);
+      return { success: false, message: 'Failed to verify email OTP' };
     }
   }
 }

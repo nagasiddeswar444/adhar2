@@ -1,44 +1,24 @@
-# TODO - Connect Aadhaar Advance with Database and Backend
+# OTP and Authentication Fixes
 
-## Phase 1: Setup Supabase Client
-- [ ] Add @supabase/supabase-js dependency to package.json
-- [ ] Create src/supabase.ts with Supabase client configuration
+## Tasks
+- [x] 1. Update api.ts - Add phone parameter to sendOTP function
+- [x] 2. Update database.ts - Add phone parameter to authOperations.sendOTP
+- [x] 3. Update AuthContext.tsx - Add phone parameter to sendOtp function
+- [x] 4. Update Auth.tsx - Pass phone number when calling sendOtp during signup
+- [x] 5. Update server/routes/auth.js - Pass phone parameter in send-otp endpoint
 
-## Phase 2: Create Database API Layer
-- [ ] Create src/lib/database.ts with all database operations:
-  - [ ] User operations (getUser, createUser, updateUser)
-  - [ ] Center operations (getCenters, getCenterById, searchCenters)
-  - [ ] Update Type operations (getUpdateTypes)
-  - [ ] Time Slot operations (getAvailableSlots, getSlotsByCenter)
-  - [ ] Appointment operations (createAppointment, getAppointments, getAppointmentById, updateAppointmentStatus)
-  - [ ] Document operations (uploadDocument, getDocuments, updateDocumentStatus)
-  - [ ] Update History operations (createUpdateRecord, getUpdateHistory)
-  - [ ] Fraud Log operations (logFraudEvent, getFraudLogs)
-  - [ ] Analytics operations (getDashboardStats, getFraudStats, getDemandForecast)
+## Summary of Changes Made:
+1. **Frontend Fixes:**
+   - Added phone parameter to sendOTP function in api.ts, database.ts, and AuthContext.tsx
+   - Updated Auth.tsx to pass phone number when calling sendOtp during signup
+   - Phone number is now properly formatted with country code (+91) before sending
 
-## Phase 3: Update BookSlot Page
-- [ ] Fetch centers from database instead of mockData
-- [ ] Fetch update types from database instead of mockData
-- [ ] Fetch time slots from database instead of mockData
-- [ ] Save appointment to database on booking confirmation
+2. **Backend Fixes:**
+   - Updated server/routes/auth.js to accept and use phone parameter in /send-otp endpoint
+   - Phone number is now prioritized: 1) provided phone, 2) from database, 3) from request body
+   - Added fallback logging for development when no phone available
 
-## Phase 4: Update Dashboard Page
-- [ ] Fetch booking stats from analytics_summary table
-- [ ] Fetch demand forecast from demand_forecast table
-- [ ] Fetch center load from center_load table
-
-## Phase 5: Update Tracking Page
-- [ ] Fetch appointments from database
-- [ ] Fetch update history from database
-- [ ] Fetch documents from database
-- [ ] Real-time queue updates from database
-
-## Phase 6: Update FraudAnalytics Page
-- [ ] Fetch fraud statistics from fraud_logs table
-- [ ] Fetch risk distribution from analytics_summary
-
-## Phase 7: Test and Verify
-- [ ] Test booking flow end-to-end
-- [ ] Test dashboard data loading
-- [ ] Test tracking page data
-- [ ] Test fraud analytics data
+## Additional Features to Add (from user request):
+- [ ] Add forgot password interface
+- [ ] Add password reset interface  
+- [ ] Add email verification interface

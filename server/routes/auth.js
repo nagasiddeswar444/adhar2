@@ -194,7 +194,7 @@ router.post('/signup', async (req, res) => {
 // Send OTP endpoint - defaults to SMS (mobile number)
 router.post('/send-otp', async (req, res) => {
   try {
-    const { aadhaarNumber, method = 'sms', type = 'login' } = req.body;
+    const { aadhaarNumber, method = 'sms', type = 'login', phone } = req.body;
 
     if (!aadhaarNumber) {
       return res.status(400).json({ error: 'Aadhaar number is required' });
@@ -211,7 +211,8 @@ router.post('/send-otp', async (req, res) => {
     }
 
     // Generate and send OTP via the selected method (default is SMS/mobile)
-    const result = await sendOTP(aadhaarNumber, method, type);
+    // Pass phone number if provided (for signup flow where user record doesn't exist yet)
+    const result = await sendOTP(aadhaarNumber, method, type, phone);
 
     if (result.success) {
       // Send OTP via the selected method
@@ -219,10 +220,13 @@ router.post('/send-otp', async (req, res) => {
         const user = aadhaarRecords[0];
         await sendOTPEmail(user.email, result.otp, type === 'password_reset' ? 'password_reset' : type === 'email_verification' ? 'email_verification' : 'login');
       } else if (method === 'sms') {
-        // For SMS, use the phone from the aadhaar_records (this is the mobile number from UIDAI)
-        const phone = aadhaarRecords[0]?.phone || req.body.phone;
-        if (phone) {
-          await sendOTPSMS(phone, result.otp);
+        // For SMS, prioritize: 1) provided phone parameter, 2) phone from aadhaar_records, 3) from request body
+        const phoneNumber = phone || aadhaarRecords[0]?.phone || req.body.phone;
+        if (phoneNumber) {
+          await sendOTPSMS(phoneNumber, result.otp);
+        } else {
+          // Log OTP for development if no phone available
+          console.log(`OTP for ${aadhaarNumber} (no phone available): ${result.otp}`);
         }
       }
 
