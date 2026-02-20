@@ -200,13 +200,20 @@ router.post('/send-otp', async (req, res) => {
       return res.status(400).json({ error: 'Aadhaar number is required' });
     }
 
-    // Get user email/phone for sending OTP
-    const [aadhaarRecords] = await pool.execute(
-      'SELECT ar.*, u.email, u.phone FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
-      [aadhaarNumber]
-    );
+    // Get user email/phone for sending OTP (if user exists)
+    let aadhaarRecords = [];
+    try {
+      const [records] = await pool.execute(
+        'SELECT ar.*, u.email, u.phone FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
+        [aadhaarNumber]
+      );
+      aadhaarRecords = records;
+    } catch (err) {
+      console.log('User not found in database, will use provided phone number');
+    }
 
-    if (aadhaarRecords.length === 0 && type !== 'signup') {
+    // Allow sending OTP if phone is provided directly, even if user doesn't exist
+    if (aadhaarRecords.length === 0 && !phone && type !== 'signup') {
       return res.status(404).json({ error: 'User not found' });
     }
 

@@ -309,6 +309,23 @@ const Auth = () => {
                   <p className="text-xs text-muted-foreground mt-1">Enter your 12-digit Aadhar number</p>
                 </div>
 
+                {/* Phone for signup */}
+                {mode === 'signup' && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground mb-1.5 block">
+                      Mobile Number
+                    </label>
+                    <Input 
+                      type="tel" 
+                      placeholder="6300395240" 
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      maxLength={10}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Enter your 10-digit mobile number</p>
+                  </div>
+                )}
+
                 {/* Email for signup */}
                 {mode === 'signup' && (
                   <div>
@@ -376,7 +393,7 @@ const Auth = () => {
                   className="w-full"
                   size="lg"
                   onClick={handleSubmit}
-                  disabled={loading || !aadharNumber || !password || (mode === 'signup' && !confirmPassword) || !captchaInput}
+                  disabled={loading || !aadharNumber || !password || (mode === 'signup' && (!confirmPassword || !phone)) || !captchaInput}
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
                   {mode === 'signin' ? t('auth.signIn') : t('auth.signUp')}
