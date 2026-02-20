@@ -1,6 +1,6 @@
 -- ============================================================================
--- AADHAAR ADVANCE DATABASE SCHEMA
--- Redesigned: Users = Auth only, Aadhaar Records = All personal info
+-- AADHA SCHEMA
+--AR ADVANCE DATABASE Redesigned: Users = Auth only, Aadhaar Records = All personal info
 -- ============================================================================
 
 -- ============================================================================
@@ -77,6 +77,9 @@ CREATE TABLE aadhaar_records (
   mobile_verified BOOLEAN DEFAULT FALSE,
   email_verified BOOLEAN DEFAULT FALSE,
   
+  -- Email Verification Token
+  email_verification_token VARCHAR(255),
+  
   -- Timestamps
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -87,6 +90,25 @@ CREATE TABLE aadhaar_records (
   INDEX idx_state (state),
   INDEX idx_district (district),
   INDEX idx_status (status)
+);
+
+-- ============================================================================
+-- OTP VERIFICATION TABLE
+-- ============================================================================
+CREATE TABLE otp_verification (
+  id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  aadhaar_number VARCHAR(12) NOT NULL,
+  otp VARCHAR(6) NOT NULL,
+  type VARCHAR(50) NOT NULL DEFAULT 'login', -- login, email_verification, password_reset
+  expires_at TIMESTAMP NOT NULL,
+  used BOOLEAN DEFAULT FALSE,
+  attempts INT DEFAULT 0,
+  verified_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  
+  INDEX idx_aadhaar_number (aadhaar_number),
+  INDEX idx_type (type),
+  INDEX idx_expires (expires_at)
 );
 
 -- ============================================================================

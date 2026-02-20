@@ -63,6 +63,7 @@ const initializeDatabase = async () => {
         eid_number VARCHAR(20),
         mobile_verified BOOLEAN DEFAULT FALSE,
         email_verified BOOLEAN DEFAULT FALSE,
+        email_verification_token VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -74,6 +75,25 @@ const initializeDatabase = async () => {
       )
     `);
     console.log('Aadhaar records table created');
+
+    // Create OTP verification table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS otp_verification (
+        id CHAR(36) PRIMARY KEY,
+        aadhaar_number VARCHAR(12) NOT NULL,
+        otp VARCHAR(6) NOT NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'login',
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT FALSE,
+        attempts INT DEFAULT 0,
+        verified_at TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_aadhaar_number (aadhaar_number),
+        INDEX idx_type (type),
+        INDEX idx_expires (expires_at)
+      )
+    `);
+    console.log('OTP verification table created');
 
     // Create centers table
     await connection.execute(`
