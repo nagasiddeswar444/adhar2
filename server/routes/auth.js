@@ -158,9 +158,15 @@ router.post('/signup', async (req, res) => {
 
     await connection.commit();
 
-    // Send verification email (async - don't wait for it)
+    // Send verification email with OTP (async - don't wait for it)
     sendVerificationEmail(email, personalInfo?.fullName || 'User', emailVerificationToken)
       .catch(err => console.error('Failed to send verification email:', err));
+
+    // Also send OTP to email for verification
+    const otpResult = await sendOTP(aadhaarNumber, 'email', 'email_verification');
+    if (otpResult.success) {
+      await sendOTPEmail(email, otpResult.otp, 'email_verification');
+    }
 
     // Send welcome email (async)
     sendWelcomeEmail(email, personalInfo?.fullName || 'User')
@@ -171,10 +177,11 @@ router.post('/signup', async (req, res) => {
       .catch(err => console.error('Failed to send welcome SMS:', err));
 
     res.status(201).json({
-      message: 'User created successfully. Please verify your email.',
+      message: 'User created successfully. Please verify your email using the OTP sent to your email.',
       user: { id: userId, email, phone },
       aadhaarRecord: { id: aadhaarRecordId, aadhaar_number: aadhaarNumber },
-      emailVerificationSent: true
+      emailVerificationSent: true,
+      otpSentToEmail: true
     });
   } catch (error) {
     await connection.rollback();
@@ -211,7 +218,7 @@ router.post('/send-otp', async (req, res) => {
       // Send OTP via the selected method
       if (method === 'email') {
         const user = aadhaarRecords[0];
-        await sendOTPEmail(user.email, result.otp, type === 'password_reset' ? 'password_reset' : 'login');
+        await sendOTPEmail(user.email, result.otp, type === 'password_reset' ? 'password_reset' : type === 'email_verification' ? 'email_verification' : 'login');
       } else if (method === 'sms') {
         // For SMS, use the phone from the request or from the database
         const phone = aadhaarRecords[0]?.phone || req.body.phone;
@@ -247,6 +254,14 @@ router.post('/verify-otp', async (req, res) => {
     const result = await verifyOTP(aadhaarNumber, otp, type);
 
     if (result.valid) {
+      // If verifying email OTP, also mark email as verified
+      if (type === 'email_verification') {
+        await pool.execute(
+          'UPDATE aadhaar_records SET email_verified = TRUE, verification_date = NOW() WHERE aadhaar_number = ?',
+          [aadhaarNumber]
+        );
+      }
+      
       res.json({ valid: true, message: 'OTP verified successfully' });
     } else {
       res.status(400).json({ valid: false, error: result.error });
@@ -257,7 +272,7 @@ router.post('/verify-otp', async (req, res) => {
   }
 });
 
-// Verify email endpoint
+// Verify email endpoint (with link - also sends OTP)
 router.get('/verify-email', async (req, res) => {
   try {
     const { token } = req.query;
@@ -283,15 +298,60 @@ router.get('/verify-email', async (req, res) => {
       return res.json({ message: 'Email already verified' });
     }
 
-    // Update verification status
+    // Get user email
+    const [users] = await pool.execute(
+      'SELECT email FROM users WHERE id = ?',
+      [aadhaarRecord.user_id]
+    );
+
+    if (users.length > 0) {
+      // Send OTP to email for verification
+      const otpResult = await sendOTP(aadhaarRecord.aadhaar_number, 'email', 'email_verification');
+      if (otpResult.success) {
+        await sendOTPEmail(users[0].email, otpResult.otp, 'email_verification');
+      }
+
+      // Return success with OTP for verification (in development)
+      res.json({ 
+        message: 'Verification OTP sent to your email. Please enter the OTP to verify.',
+        emailVerified: false,
+        otpSent: true,
+        ...(process.env.NODE_ENV === 'development' && { otp: otpResult.otp })
+      });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('Verify email error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Complete email verification with OTP
+router.post('/verify-email-otp', async (req, res) => {
+  try {
+    const { aadhaarNumber, otp } = req.body;
+
+    if (!aadhaarNumber || !otp) {
+      return res.status(400).json({ error: 'Aadhaar number and OTP are required' });
+    }
+
+    // Verify the OTP
+    const otpResult = await verifyOTP(aadhaarNumber, otp, 'email_verification');
+    
+    if (!otpResult.valid) {
+      return res.status(400).json({ error: otpResult.error });
+    }
+
+    // Update email verification status
     await pool.execute(
-      'UPDATE aadhaar_records SET email_verified = TRUE, verification_date = NOW(), email_verification_token = NULL WHERE id = ?',
-      [aadhaarRecord.id]
+      'UPDATE aadhaar_records SET email_verified = TRUE, verification_date = NOW(), email_verification_token = NULL WHERE aadhaar_number = ?',
+      [aadhaarNumber]
     );
 
     res.json({ message: 'Email verified successfully' });
   } catch (error) {
-    console.error('Verify email error:', error);
+    console.error('Verify email OTP error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -299,35 +359,52 @@ router.get('/verify-email', async (req, res) => {
 // Resend verification email
 router.post('/resend-verification', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, aadhaarNumber } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
+    if (!email && !aadhaarNumber) {
+      return res.status(400).json({ error: 'Email or Aadhaar number is required' });
     }
 
-    // Find user by email
-    const [users] = await pool.execute(
-      'SELECT * FROM users WHERE email = ?',
-      [email]
-    );
+    let user, aadhaarRecord;
 
-    if (users.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    if (aadhaarNumber) {
+      // Find by aadhaar number
+      const [records] = await pool.execute(
+        'SELECT ar.*, u.email FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
+        [aadhaarNumber]
+      );
+      
+      if (records.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      aadhaarRecord = records[0];
+      email = records[0].email;
+    } else {
+      // Find by email
+      const [users] = await pool.execute(
+        'SELECT * FROM users WHERE email = ?',
+        [email]
+      );
+
+      if (users.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      user = users[0];
+
+      // Get aadhaar record
+      const [records] = await pool.execute(
+        'SELECT * FROM aadhaar_records WHERE id = ?',
+        [user.aadhaar_record_id]
+      );
+
+      if (records.length === 0) {
+        return res.status(404).json({ error: 'Aadhaar record not found' });
+      }
+
+      aadhaarRecord = records[0];
     }
-
-    const user = users[0];
-
-    // Get aadhaar record
-    const [aadhaarRecords] = await pool.execute(
-      'SELECT * FROM aadhaar_records WHERE id = ?',
-      [user.aadhaar_record_id]
-    );
-
-    if (aadhaarRecords.length === 0) {
-      return res.status(404).json({ error: 'Aadhaar record not found' });
-    }
-
-    const aadhaarRecord = aadhaarRecords[0];
 
     if (aadhaarRecord.email_verified) {
       return res.status(400).json({ error: 'Email already verified' });
@@ -340,10 +417,16 @@ router.post('/resend-verification', async (req, res) => {
       [newToken, aadhaarRecord.id]
     );
 
-    // Send verification email
-    await sendVerificationEmail(user.email, aadhaarRecord.full_name || 'User', newToken);
+    // Send verification email with link
+    await sendVerificationEmail(email, aadhaarRecord.full_name || 'User', newToken);
 
-    res.json({ message: 'Verification email sent successfully' });
+    // Also send OTP to email
+    const otpResult = await sendOTP(aadhaarNumber || aadhaarRecord.aadhaar_number, 'email', 'email_verification');
+    if (otpResult.success) {
+      await sendOTPEmail(email, otpResult.otp, 'email_verification');
+    }
+
+    res.json({ message: 'Verification email and OTP sent successfully' });
   } catch (error) {
     console.error('Resend verification error:', error);
     res.status(500).json({ error: 'Internal server error' });
