@@ -1,6 +1,8 @@
 // OTP Generator Utility
 const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/db');
+const { sendOTPSMS } = require('./smsService');
+const { sendOTPEmail } = require('./emailService');
 
 // Generate a 6-digit OTP
 const generateOTP = () => {
@@ -65,36 +67,43 @@ const verifyOTP = async (aadhaarNumber, otp, type = 'login') => {
   return { valid: true };
 };
 
-// Send OTP (integrates with email/SMS service)
-const sendOTP = async (aadhaarNumber, method = 'email', type = 'login') => {
+// Send OTP via specified method (sms or email)
+const sendOTP = async (aadhaarNumber, method = 'sms', type = 'login', phoneNumber = null) => {
   const otp = generateOTP();
 
   // Store OTP in database
   await storeOTP(aadhaarNumber, otp, type);
 
   // Get user email/phone for sending
-  const [aadhaarRecords] = await pool.execute(
-    'SELECT ar.*, u.email, u.phone FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
-    [aadhaarNumber]
-  );
+  let user = null;
+  try {
+    const [aadhaarRecords] = await pool.execute(
+      'SELECT ar.*, u.email, u.phone FROM aadhaar_records ar JOIN users u ON ar.user_id = u.id WHERE ar.aadhaar_number = ?',
+      [aadhaarNumber]
+    );
 
-  if (aadhaarRecords.length === 0) {
-    // For signup flow, we might not have a user yet
-    console.log(`OTP for ${aadhaarNumber}: ${otp}`);
-    return { success: true, otp }; // Return OTP for testing
+    if (aadhaarRecords.length > 0) {
+      user = aadhaarRecords[0];
+    }
+  } catch (error) {
+    console.error('Error fetching user for OTP:', error);
   }
 
-  const user = aadhaarRecords[0];
+  // If no phone number provided, try to get from database
+  const phone = phoneNumber || user?.phone;
 
-  // In production, integrate with email/SMS service
-  if (method === 'email' || type === 'email_verification') {
-    // Send email with OTP
-    console.log(`Sending email OTP to ${user.email}: ${otp}`);
-    // In production: await sendEmail(user.email, 'Your OTP', `Your OTP is ${otp}`);
-  } else if (method === 'sms' || type === 'login') {
+  // Send OTP via the selected method
+  if (method === 'sms' && phone) {
     // Send SMS with OTP
-    console.log(`Sending SMS OTP to ${user.phone}: ${otp}`);
-    // In production: await sendSMS(user.phone, `Your OTP is ${otp}`);
+    await sendOTPSMS(phone, otp);
+    console.log(`SMS OTP sent to ${phone}: ${otp}`);
+  } else if (method === 'email' && user?.email) {
+    // Send email with OTP
+    await sendOTPEmail(user.email, otp, type === 'password_reset' ? 'password_reset' : 'login');
+    console.log(`Email OTP sent to ${user.email}: ${otp}`);
+  } else if (!phone && !user?.email) {
+    // For development/testing, log the OTP
+    console.log(`OTP for ${aadhaarNumber} (${method}): ${otp}`);
   }
 
   return { success: true, otp }; // Return OTP for testing in development

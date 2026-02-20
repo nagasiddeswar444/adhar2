@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../config/db');
 const { sendOTP, verifyOTP } = require('../utils/otpGenerator');
 const { sendVerificationEmail, sendOTPEmail, sendWelcomeEmail } = require('../utils/emailService');
+const { sendOTPSMS } = require('../utils/smsService');
 
 const router = express.Router();
 
@@ -50,11 +51,6 @@ router.post('/login', async (req, res) => {
     if (!user.is_active) {
       return res.status(401).json({ error: 'Account is inactive' });
     }
-
-    // Check if email is verified (optional - can be required for login)
-    // if (!aadhaarRecord.email_verified) {
-    //   return res.status(401).json({ error: 'Please verify your email first' });
-    // }
 
     // Update last login
     await pool.execute(
@@ -141,8 +137,8 @@ router.post('/signup', async (req, res) => {
         address, state, district, city, pincode, 
         status, is_verified, is_eid_linked, mobile_verified, email_verified,
         fingerprint_status, iris_status, face_scan_status, card_type,
-        email_verification_token, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', FALSE, FALSE, FALSE, FALSE, 'registered', 'registered', 'registered', 'standard', ?, NOW(), NOW())`,
+        email_verification_token, phone, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', FALSE, FALSE, FALSE, FALSE, 'registered', 'registered', 'registered', 'standard', ?, ?, NOW(), NOW())`,
       [
         aadhaarRecordId,
         userId,
@@ -155,7 +151,8 @@ router.post('/signup', async (req, res) => {
         personalInfo?.district || null,
         personalInfo?.city || null,
         personalInfo?.pincode || '',
-        emailVerificationToken
+        emailVerificationToken,
+        phone
       ]
     );
 
@@ -168,6 +165,10 @@ router.post('/signup', async (req, res) => {
     // Send welcome email (async)
     sendWelcomeEmail(email, personalInfo?.fullName || 'User')
       .catch(err => console.error('Failed to send welcome email:', err));
+
+    // Send welcome SMS (async)
+    sendOTPSMS(phone, 'Welcome to Aadhaar Advance! Your account has been created successfully.')
+      .catch(err => console.error('Failed to send welcome SMS:', err));
 
     res.status(201).json({
       message: 'User created successfully. Please verify your email.',
@@ -184,7 +185,7 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-// Send OTP endpoint
+// Send OTP endpoint - supports both SMS and Email
 router.post('/send-otp', async (req, res) => {
   try {
     const { aadhaarNumber, method = 'sms', type = 'login' } = req.body;
@@ -203,14 +204,20 @@ router.post('/send-otp', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Send OTP via the selected method
+    // Generate and send OTP via the selected method
     const result = await sendOTP(aadhaarNumber, method, type);
 
     if (result.success) {
-      // If method is email, send via email service
+      // Send OTP via the selected method
       if (method === 'email') {
         const user = aadhaarRecords[0];
         await sendOTPEmail(user.email, result.otp, type === 'password_reset' ? 'password_reset' : 'login');
+      } else if (method === 'sms') {
+        // For SMS, use the phone from the request or from the database
+        const phone = aadhaarRecords[0]?.phone || req.body.phone;
+        if (phone) {
+          await sendOTPSMS(phone, result.otp);
+        }
       }
 
       res.json({ 
@@ -346,7 +353,7 @@ router.post('/resend-verification', async (req, res) => {
 // Password reset request
 router.post('/forgot-password', async (req, res) => {
   try {
-    const { aadhaarNumber, method = 'email' } = req.body;
+    const { aadhaarNumber, method = 'sms' } = req.body;
 
     if (!aadhaarNumber) {
       return res.status(400).json({ error: 'Aadhaar number is required' });
@@ -368,8 +375,12 @@ router.post('/forgot-password', async (req, res) => {
     // Generate and send OTP
     const result = await sendOTP(aadhaarNumber, method, 'password_reset');
 
-    if (result.success && method === 'email') {
-      await sendOTPEmail(user.email, result.otp, 'password_reset');
+    if (result.success) {
+      if (method === 'email') {
+        await sendOTPEmail(user.email, result.otp, 'password_reset');
+      } else if (method === 'sms') {
+        await sendOTPSMS(user.phone, result.otp);
+      }
     }
 
     res.json({ message: 'If the account exists, a password reset OTP has been sent' });
