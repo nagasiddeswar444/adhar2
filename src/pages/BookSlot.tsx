@@ -315,9 +315,11 @@ const BookSlot = () => {
   const handleNext = async () => {
     if (currentStep === 'update' && selectedType) {
       setShowFaceScan(true);
-    } else if (currentStep === 'center' && selectedCenter) {
+} else if (currentStep === 'center' && selectedCenter) {
       if (selectedType?.requires_biometric) {
         setPendingBiometricBooking(true);
+      } else if (selectedSlot) {
+        await createAppointment();
       } else {
         setCurrentStep('slot');
       }
@@ -528,8 +530,77 @@ const BookSlot = () => {
                   <CenterPicker
                     centers={centers}
                     selectedCenter={selectedCenter}
-                    onSelectCenter={(center) => setSelectedCenter(center)}
+onSelectCenter={(center) => setSelectedCenter(center)}
                   />
+                  
+                  {selectedCenter && !selectedType?.requires_biometric && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-6"
+                    >
+                      <Card className="border-primary/30 bg-primary/5">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="flex items-center gap-2 text-lg">
+                            <Bot className="w-5 h-5 text-primary" />
+                            {t('booking.aiSlotAssignment')}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {isAutoAssigning ? (
+                            <div className="flex items-center gap-3">
+                              <div className="relative">
+                                <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                <Sparkles className="w-4 h-4 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-foreground">{t('booking.analyzingSlots')}</p>
+                              </div>
+                            </div>
+                          ) : selectedSlot ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 text-green-600">
+                                <Check className="w-5 h-5" />
+                                <span className="font-medium">AI Selected Optimal Slot!</span>
+                              </div>
+                              <div className="bg-muted p-3 rounded-lg">
+                                <p className="text-sm">
+                                  <strong>Date:</strong> {selectedSlot.date}<br />
+                                  <strong>Time:</strong> {selectedSlot.start_time}<br />
+                                  <strong>Available:</strong> {selectedSlot.available_slots}
+                                </p>
+                              </div>
+                              <Button variant="outline" onClick={() => setSelectedSlot(null)} className="w-full">
+                                Choose Different
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <p className="text-sm text-muted-foreground">
+                                <Sparkles className="w-4 h-4 inline mr-1 text-gold" />
+                                {t('booking.aiAutoAssignDesc')}
+                              </p>
+                              <div className="flex gap-3">
+                                <Button variant="outline" onClick={() => setCurrentStep('slot')} className="flex-1">
+                                  Manual
+                                </Button>
+                                <Button variant="gold" onClick={() => {
+                                  setIsAutoAssigning(true);
+                                  setTimeout(() => {
+                                    const slot = autoAssignSlot();
+                                    if (slot) setSelectedSlot(slot);
+                                    setIsAutoAssigning(false);
+                                  }, 2000);
+                                }} className="flex-1">
+                                  AI Find Best
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  )}
                 </motion.div>
               )}
 
