@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -132,19 +132,19 @@ class ApiClient {
   // ============ UPDATE TYPES ============
   updateTypes = {
     getAll: (onlineOnly?: boolean) => {
-      const query = onlineOnly ? '?onlineOnly=true' : '';
+      const query = onlineOnly ? '?online=true' : '';
       return this.request<any[]>(`/update-types${query}`);
     },
 
     getById: (id: string) => this.request<any>(`/update-types/${id}`),
 
-    getBiometricRequired: () => this.request<any[]>('/update-types/biometric/required'),
+    getBiometricRequired: () => this.request<any[]>('/update-types?biometric=true'),
   };
 
   // ============ TIME SLOTS ============
   timeSlots = {
     getAvailable: (centerId: string, date: string) =>
-      this.request<any[]>(`/time-slots/available?centerId=${centerId}&date=${date}`),
+      this.request<any[]>(`/time-slots/available?center_id=${centerId}&date=${date}`),
 
     getByCenter: (centerId: string) => this.request<any[]>(`/time-slots/center/${centerId}`),
 

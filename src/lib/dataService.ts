@@ -1,4 +1,3 @@
-import { isSupabaseConfigured } from '@/supabase'
 import { 
   centerOperations, 
   updateTypeOperations, 
@@ -11,22 +10,18 @@ import {
   type Appointment
 } from '@/lib/database'
 import { 
-  centers as mockCenters, 
-  updateTypes as mockUpdateTypes, 
-  timeSlots as mockTimeSlots,
-  bookingStats as mockBookingStats,
-  fraudStats as mockFraudStats,
   type Center as MockCenter,
   type UpdateType as MockUpdateType,
   type TimeSlot as MockTimeSlot
 } from '@/data/mockData'
 
-// Flag to check if we're using database
-let useDatabase = false
+// Flag to check if we're using database (always true now since we're connecting to real database)
+let useDatabase = true
 
 // Initialize database connection
 export async function initDatabase(): Promise<boolean> {
-  useDatabase = isSupabaseConfigured()
+  // Always use the Node.js API database connection
+  useDatabase = true
   return useDatabase
 }
 
@@ -100,10 +95,10 @@ export const dataService = {
         }))
       } catch (error) {
         console.error('Failed to fetch centers from database:', error)
-        return mockCenters
+        return []
       }
     }
-    return mockCenters
+    return []
   },
 
   async getCenterById(id: string): Promise<MockCenter | undefined> {
@@ -126,7 +121,7 @@ export const dataService = {
         console.error('Failed to fetch center from database:', error)
       }
     }
-    return mockCenters.find(c => c.id === id)
+    return undefined
   },
 
   // Update Types
@@ -147,10 +142,10 @@ export const dataService = {
         }))
       } catch (error) {
         console.error('Failed to fetch update types from database:', error)
-        return mockUpdateTypes
+        return []
       }
     }
-    return mockUpdateTypes
+    return []
   },
 
   // Time Slots
@@ -167,10 +162,10 @@ export const dataService = {
         }))
       } catch (error) {
         console.error('Failed to fetch time slots from database:', error)
-        return mockTimeSlots
+        return []
       }
     }
-    return mockTimeSlots
+    return []
   },
 
   // Appointments
@@ -203,21 +198,7 @@ export const dataService = {
         return null
       }
     }
-    // Return mock appointment for non-database mode
-    return {
-      id: `apt-${Date.now()}`,
-      user_id: appointment.userId,
-      center_id: appointment.centerId,
-      update_type_id: appointment.updateTypeId,
-      time_slot_id: appointment.timeSlotId,
-      booking_id: appointment.bookingId,
-      scheduled_date: appointment.scheduledDate,
-      status: 'scheduled',
-      mode: appointment.mode,
-      is_auto_assigned: appointment.isAutoAssigned,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
+    return null
   },
 
   async getAppointments(userId: string): Promise<any[]> {
@@ -233,7 +214,7 @@ export const dataService = {
   },
 
   // Analytics
-  async getBookingStats(): Promise<typeof mockBookingStats> {
+  async getBookingStats(): Promise<any> {
     if (useDatabase) {
       try {
         const stats = await analyticsOperations.getDashboardStats()
@@ -250,21 +231,18 @@ export const dataService = {
         console.error('Failed to fetch stats from database:', error)
       }
     }
-    return mockBookingStats
+    return null
   },
 
-  async getFraudStats(): Promise<typeof mockFraudStats> {
+  async getFraudStats(): Promise<any> {
     if (useDatabase) {
       try {
         const stats = await analyticsOperations.getFraudStats()
-        return {
-          beforeSystem: stats.before,
-          afterSystem: stats.after
-        }
+        return stats
       } catch (error) {
         console.error('Failed to fetch fraud stats from database:', error)
       }
     }
-    return mockFraudStats
+    return null
   }
 }

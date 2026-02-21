@@ -291,7 +291,8 @@ export const authOperations = {
   // Check if email exists
   async emailExists(email: string): Promise<boolean> {
     try {
-      return false;
+      const result = await api.auth.emailExists(email);
+      return result.exists;
     } catch {
       return false;
     }
@@ -300,7 +301,8 @@ export const authOperations = {
   // Check if phone exists
   async phoneExists(phone: string): Promise<boolean> {
     try {
-      return false;
+      const result = await api.auth.phoneExists(phone);
+      return result.exists;
     } catch {
       return false;
     }
@@ -473,6 +475,21 @@ export const updateTypeOperations = {
 // ============ TIME SLOT OPERATIONS ============
 
 export const timeSlotOperations = {
+  async getTimeSlots(centerId: string, date: string): Promise<any[]> {
+    try {
+      if (centerId && date) {
+        return await api.timeSlots.getAvailable(centerId, date);
+      }
+      if (centerId) {
+        return await api.timeSlots.getByCenter(centerId);
+      }
+      return [];
+    } catch (error) {
+      console.error('Get time slots error:', error);
+      return [];
+    }
+  },
+
   async getAvailableSlots(centerId: string, date: string): Promise<any[]> {
     try {
       return await api.timeSlots.getAvailable(centerId, date);
@@ -611,12 +628,23 @@ export const updateHistoryOperations = {
 // ============ FRAUD LOG OPERATIONS ============
 
 export const fraudLogOperations = {
-  async getFraudLogs(): Promise<any[]> {
-    return [];
+  async getFraudLogs(params?: any): Promise<any[]> {
+    try {
+      return await api.fraudLogs.getAll(params);
+    } catch (error) {
+      console.error('Get fraud logs error:', error);
+      return [];
+    }
   },
 
   async getUnresolvedFraudCount(): Promise<number> {
-    return 0;
+    try {
+      const result = await api.fraudLogs.getUnresolvedCount();
+      return result.count;
+    } catch (error) {
+      console.error('Get unresolved fraud count error:', error);
+      return 0;
+    }
   }
 }
 
@@ -669,10 +697,7 @@ export const analyticsOperations = {
       return await api.analytics.getFraudComparison();
     } catch (error) {
       console.error('Get fraud stats error:', error);
-      return {
-        before: { monthlyFraudAttempts: 2500, successfulFrauds: 850, avgDetectionTime: 72, financialLoss: 15000000 },
-        after: { monthlyFraudAttempts: 2200, successfulFrauds: 120, avgDetectionTime: 2, financialLoss: 1800000 }
-      };
+      return null;
     }
   }
 }

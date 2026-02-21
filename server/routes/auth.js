@@ -291,4 +291,46 @@ router.get('/user/:id', async (req, res) => {
   }
 });
 
+// Check if email exists
+router.get('/email-exists', async (req, res) => {
+  try {
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const [users] = await pool.execute(
+      'SELECT id FROM users WHERE email = ?',
+      [email]
+    );
+
+    res.json({ exists: users.length > 0 });
+  } catch (error) {
+    console.error('Check email exists error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Check if phone exists
+router.get('/phone-exists', async (req, res) => {
+  try {
+    const { phone } = req.query;
+
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone is required' });
+    }
+
+    const [users] = await pool.execute(
+      'SELECT id FROM users WHERE phone = ?',
+      [phone]
+    );
+
+    res.json({ exists: users.length > 0 });
+  } catch (error) {
+    console.error('Check phone exists error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

@@ -3,10 +3,30 @@ import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { type Center, type TimeSlot, type UpdateType } from '@/data/mockData';
 import { CheckCircle, QrCode, Calendar, MapPin, FileEdit, Download, Share2, Mail, Loader2, MessageSquare, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '@/contexts/LanguageContext';
+
+interface Center {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  address?: string;
+}
+
+interface TimeSlot {
+  id: string;
+  date?: string;
+  time: string;
+}
+
+interface UpdateType {
+  id: string;
+  name: string;
+  estimatedTime?: string;
+  requiredDocuments?: string[];
+}
 
 interface BookingConfirmationProps {
   center: Center;

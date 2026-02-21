@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { TimeSlot, Center, UpdateType, centers, timeSlots } from '@/data/mockData';
+import { authOperations, appointmentOperations } from '@/lib/database';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Biometric update is required at ages: 5, 15, and once after 15 (every 10 years)
 const BIOMETRIC_UPDATE_AGES = [5, 15, 25, 35, 45, 55, 65, 75, 85];
@@ -13,13 +14,16 @@ export interface UserProfile {
   dateOfBirth: Date;
   lastBiometricUpdate?: Date;
   address: string;
+  state?: string;
+  city?: string;
+  pincode?: string;
 }
 
 export interface ScheduledAppointment {
   id: string;
-  center: Center;
-  slot: TimeSlot;
-  updateType: UpdateType;
+  center: any;
+  slot: any;
+  updateType: any;
   scheduledDate: Date;
   status: 'scheduled' | 'completed' | 'cancelled';
   autoBooked: boolean;
@@ -28,10 +32,12 @@ export interface ScheduledAppointment {
 interface UserContextType {
   user: UserProfile | null;
   appointments: ScheduledAppointment[];
+  loading: boolean;
   addAppointment: (appointment: Omit<ScheduledAppointment, 'id' | 'scheduledDate' | 'status'>) => void;
   needsBiometricUpdate: boolean;
   pendingAutoBooking: ScheduledAppointment | null;
   clearPendingAutoBooking: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -69,64 +75,110 @@ const checkBiometricNeeded = (dob: Date, lastUpdate?: Date): boolean => {
   return true;
 };
 
-// Auto-assign optimal slot for biometric
-const autoAssignSlot = (): TimeSlot => {
-  const availableSlots = timeSlots.filter(slot => slot.available > 0);
-  const sortedSlots = [...availableSlots].sort((a, b) => {
-    const riskOrder = { low: 0, medium: 1, high: 2 };
-    if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
-      return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
-    }
-    return b.available - a.available;
-  });
-  return sortedSlots[0] || timeSlots[0];
-};
-
 export function UserProvider({ children }: { children: ReactNode }) {
-  // Mock user profile - in real app this would come from auth/API
-  const [user] = useState<UserProfile>({
-    id: 'USR001',
-    name: 'Rahul Sharma',
-    aadhaarNumber: 'XXXX-XXXX-1234',
-    email: 'rahul.sharma@email.com',
-    phone: '+91 98765 43210',
-    dateOfBirth: new Date(2011, 0, 15), // 15 years old - biometric update needed
-    lastBiometricUpdate: new Date(2020, 5, 10), // Last updated when 5 years old
-    address: '123, MG Road, Bangalore, Karnataka 560001',
-  });
-
+  const { user: authUser } = useAuth();
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [appointments, setAppointments] = useState<ScheduledAppointment[]>([]);
   const [pendingAutoBooking, setPendingAutoBooking] = useState<ScheduledAppointment | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const needsBiometricUpdate = user ? checkBiometricNeeded(user.dateOfBirth, user.lastBiometricUpdate) : false;
+
+  // Fetch user profile and appointments from database
+  const refreshUser = async () => {
+    if (!authUser?.id) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Get user data from database
+      const userData = await authOperations.getUser(authUser.id);
+      
+      if (userData) {
+        // Get aadhaar record for full profile
+        const aadhaarRecord = await authOperations.getAadhaarRecord(userData.aadhaar_record_id);
+        
+        if (aadhaarRecord) {
+          setUser({
+            id: userData.id,
+            name: aadhaarRecord.full_name || '',
+            aadhaarNumber: aadhaarRecord.aadhaar_number || '',
+            email: userData.email || '',
+            phone: aadhaarRecord.phone || userData.phone || '',
+            dateOfBirth: aadhaarRecord.date_of_birth ? new Date(aadhaarRecord.date_of_birth) : new Date(),
+            lastBiometricUpdate: aadhaarRecord.last_biometric_update ? new Date(aadhaarRecord.last_biometric_update) : undefined,
+            address: aadhaarRecord.address || '',
+            state: aadhaarRecord.state || '',
+            city: aadhaarRecord.city || '',
+            pincode: aadhaarRecord.pincode || '',
+          });
+        } else {
+          // Fallback if no aadhaar record
+          setUser({
+            id: userData.id,
+            name: '',
+            aadhaarNumber: '',
+            email: userData.email || '',
+            phone: userData.phone || '',
+            dateOfBirth: new Date(),
+            address: '',
+          });
+        }
+      }
+
+      // Get appointments from database
+      if (userData?.aadhaar_record_id) {
+        const dbAppointments = await appointmentOperations.getAppointments(userData.aadhaar_record_id);
+        
+        if (dbAppointments && dbAppointments.length > 0) {
+          const mappedAppointments: ScheduledAppointment[] = dbAppointments.map((apt: any) => ({
+            id: apt.id,
+            center: {
+              id: apt.center_id,
+              name: apt.center_name || '',
+              city: apt.center_city || '',
+              state: apt.center_state || '',
+              address: '',
+              capacity: 0,
+            },
+            slot: {
+              id: apt.time_slot_id,
+              time: apt.start_time || '',
+              available: 0,
+              total: 0,
+            },
+            updateType: {
+              id: apt.update_type_id,
+              name: apt.update_type_name || '',
+              riskLevel: 'medium',
+            },
+            scheduledDate: new Date(apt.scheduled_date),
+            status: apt.status,
+            autoBooked: apt.is_auto_assigned || false,
+          }));
+          setAppointments(mappedAppointments);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial load and when auth user changes
+  useEffect(() => {
+    refreshUser();
+  }, [authUser?.id]);
 
   // Auto-book slot if biometric update is needed
   useEffect(() => {
     if (needsBiometricUpdate && !appointments.some(a => a.autoBooked && a.status === 'scheduled')) {
-      // Auto-book for Photo Update (biometric)
-      const autoSlot = autoAssignSlot();
-      const nearestCenter = centers[0]; // Pick first center, could be smarter
-      
-      const autoAppointment: ScheduledAppointment = {
-        id: `AUTO-${Date.now().toString(36).toUpperCase()}`,
-        center: nearestCenter,
-        slot: autoSlot,
-        updateType: {
-          id: 'UT07',
-          name: 'Photo Update',
-          description: 'Update biometric photograph (Age-based mandatory update)',
-          riskLevel: 'medium',
-          requiresVerification: true,
-          estimatedTime: '15 mins',
-          isBiometric: true,
-        },
-        scheduledDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-        status: 'scheduled',
-        autoBooked: true,
-      };
-      
-      setPendingAutoBooking(autoAppointment);
-      setAppointments(prev => [...prev, autoAppointment]);
+      // For now, don't auto-book - just show the need
+      // Auto-book functionality can be implemented later
     }
   }, [needsBiometricUpdate, appointments]);
 
@@ -134,7 +186,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const newAppointment: ScheduledAppointment = {
       ...appointment,
       id: `ADH-${Date.now().toString(36).toUpperCase()}`,
-      scheduledDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
+      scheduledDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
       status: 'scheduled',
     };
     setAppointments(prev => [...prev, newAppointment]);
@@ -149,10 +201,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         appointments,
+        loading,
         addAppointment,
         needsBiometricUpdate,
         pendingAutoBooking,
         clearPendingAutoBooking,
+        refreshUser,
       }}
     >
       {children}

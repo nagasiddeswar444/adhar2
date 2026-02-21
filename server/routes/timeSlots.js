@@ -44,12 +44,49 @@ router.get('/available', async (req, res) => {
       [centerId, date]
     );
 
+    // If no slots found for the date, generate default slots dynamically
+    if (slots.length === 0) {
+      const defaultSlots = generateDefaultSlots(centerId, date);
+      res.json(defaultSlots);
+      return;
+    }
+
     res.json(slots);
   } catch (error) {
     console.error('Get available slots error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Generate default time slots when none exist in database
+function generateDefaultSlots(centerId, date) {
+  const slots = [];
+  const times = [
+    { start: '09:00', end: '10:00', capacity: 10 },
+    { start: '10:00', end: '11:00', capacity: 10 },
+    { start: '11:00', end: '12:00', capacity: 10 },
+    { start: '14:00', end: '15:00', capacity: 10 },
+    { start: '15:00', end: '16:00', capacity: 10 },
+    { start: '16:00', end: '17:00', capacity: 10 },
+  ];
+
+  times.forEach((time, index) => {
+    const available = Math.floor(Math.random() * 8) + 2; // Random 2-10 available
+    slots.push({
+      id: `generated-${centerId}-${date}-${index}`,
+      center_id: centerId,
+      date: date,
+      start_time: time.start,
+      end_time: time.end,
+      available_slots: available,
+      total_capacity: time.capacity,
+      risk_level: index < 2 ? 'low' : index < 4 ? 'medium' : 'low',
+      is_active: true
+    });
+  });
+
+  return slots;
+}
 
 // Get time slot by ID
 router.get('/:id', async (req, res) => {

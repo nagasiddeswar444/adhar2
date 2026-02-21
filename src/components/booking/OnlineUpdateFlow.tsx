@@ -4,7 +4,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { type UpdateType } from '@/data/mockData';
 import {
   Upload,
   FileText,
@@ -18,6 +17,13 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
+
+interface UpdateType {
+  id: string;
+  name: string;
+  description?: string;
+  requiredDocuments?: string[];
+}
 
 interface OnlineUpdateFlowProps {
   updateType: UpdateType;

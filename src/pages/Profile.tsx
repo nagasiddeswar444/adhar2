@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -21,28 +22,30 @@ import {
   Bot,
   Sparkles,
   ChevronRight,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 
 const Profile = () => {
-  const { user, appointments, needsBiometricUpdate, pendingAutoBooking, clearPendingAutoBooking } = useUser();
+  const { user, appointments, needsBiometricUpdate, pendingAutoBooking, clearPendingAutoBooking, loading } = useUser();
   const { user: authUser } = useAuth();
   const { t } = useLanguage();
 
-  // Merge auth user details with mock user profile
-  const displayName = authUser?.name || user?.name || 'User';
-  const displayEmail = authUser?.email || user?.email || '';
-  const displayPhone = authUser?.phone || user?.phone || '';
+  // Merge auth user details with user profile from database
+  const displayName = user?.name || authUser?.name || 'User';
+  const displayEmail = user?.email || authUser?.email || '';
+  const displayPhone = user?.phone || authUser?.phone || '';
 
-  if (!user) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <main className="pt-24 pb-16">
           <div className="container mx-auto px-4 text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
             <p className="text-muted-foreground">Loading profile...</p>
           </div>
         </main>
@@ -51,7 +54,21 @@ const Profile = () => {
     );
   }
 
-  const age = Math.floor((new Date().getTime() - user.dateOfBirth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+  if (!user && !authUser) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="pt-24 pb-16">
+          <div className="container mx-auto px-4 text-center">
+            <p className="text-muted-foreground">Please log in to view your profile.</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  const age = user?.dateOfBirth ? Math.floor((new Date().getTime() - new Date(user.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 0;
   const scheduledAppointments = appointments.filter(a => a.status === 'scheduled');
   const completedAppointments = appointments.filter(a => a.status === 'completed');
 
@@ -103,11 +120,11 @@ const Profile = () => {
                       <div className="flex items-center gap-4 text-sm">
                         <span className="flex items-center gap-1 text-foreground">
                           <MapPin className="w-4 h-4 text-primary" />
-                          {pendingAutoBooking.center.name}
+                          {pendingAutoBooking.center?.name}
                         </span>
                         <span className="flex items-center gap-1 text-foreground">
                           <Clock className="w-4 h-4 text-primary" />
-                          {pendingAutoBooking.slot.time}
+                          {pendingAutoBooking.slot?.time}
                         </span>
                         <span className="flex items-center gap-1 text-foreground">
                           <Calendar className="w-4 h-4 text-primary" />
@@ -145,7 +162,7 @@ const Profile = () => {
                   <CardTitle className="text-xl">{displayName}</CardTitle>
                   <CardDescription className="flex items-center justify-center gap-2">
                     <CreditCard className="w-4 h-4" />
-                    {user.aadhaarNumber}
+                    {user?.aadhaarNumber || 'XXXX-XXXX-XXXX'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -157,14 +174,18 @@ const Profile = () => {
                     <Phone className="w-4 h-4 text-muted-foreground" />
                     <span>{displayPhone}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-sm">
-                    <Calendar className="w-4 h-4 text-muted-foreground" />
-                    <span>{format(user.dateOfBirth, 'dd MMM yyyy')} ({age} years)</span>
-                  </div>
-                  <div className="flex items-start gap-3 text-sm">
-                    <MapPin className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <span>{user.address}</span>
-                  </div>
+                  {user?.dateOfBirth && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <Calendar className="w-4 h-4 text-muted-foreground" />
+                      <span>{format(new Date(user.dateOfBirth), 'dd MMM yyyy')} ({age} years)</span>
+                    </div>
+                  )}
+                  {user?.address && (
+                    <div className="flex items-start gap-3 text-sm">
+                      <MapPin className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                      <span>{user.address}</span>
+                    </div>
+                  )}
 
                   {/* Biometric Status */}
                   <div className="pt-4 border-t">
@@ -182,9 +203,9 @@ const Profile = () => {
                         </Badge>
                       )}
                     </div>
-                    {user.lastBiometricUpdate && (
+                    {user?.lastBiometricUpdate && (
                       <p className="text-xs text-muted-foreground">
-                        Last updated: {format(user.lastBiometricUpdate, 'dd MMM yyyy')}
+                        Last updated: {format(new Date(user.lastBiometricUpdate), 'dd MMM yyyy')}
                       </p>
                     )}
                   </div>
@@ -245,7 +266,7 @@ const Profile = () => {
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <h4 className="font-semibold">{appointment.updateType.name}</h4>
+                                <h4 className="font-semibold">{appointment.updateType?.name || 'Appointment'}</h4>
                                 {appointment.autoBooked && (
                                   <Badge variant="outline" className="border-warning text-warning text-xs">
                                     <Bot className="w-3 h-3 mr-1" />
@@ -256,22 +277,22 @@ const Profile = () => {
                                   variant="outline"
                                   className={cn(
                                     "text-xs",
-                                    appointment.updateType.riskLevel === 'low' && "border-success text-success",
-                                    appointment.updateType.riskLevel === 'medium' && "border-warning text-warning",
-                                    appointment.updateType.riskLevel === 'high' && "border-destructive text-destructive"
+                                    appointment.updateType?.riskLevel === 'low' && "border-success text-success",
+                                    appointment.updateType?.riskLevel === 'medium' && "border-warning text-warning",
+                                    appointment.updateType?.riskLevel === 'high' && "border-destructive text-destructive"
                                   )}
                                 >
-                                  {appointment.updateType.riskLevel} risk
+                                  {appointment.updateType?.riskLevel || 'medium'} risk
                                 </Badge>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground">
                                 <div className="flex items-center gap-1">
                                   <MapPin className="w-4 h-4" />
-                                  {appointment.center.name}
+                                  {appointment.center?.name || 'Center'}
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <Clock className="w-4 h-4" />
-                                  {appointment.slot.time}
+                                  {appointment.slot?.time || 'Time'}
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <Calendar className="w-4 h-4" />
@@ -318,9 +339,9 @@ const Profile = () => {
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <h4 className="font-medium">{appointment.updateType.name}</h4>
+                              <h4 className="font-medium">{appointment.updateType?.name || 'Appointment'}</h4>
                               <p className="text-sm text-muted-foreground">
-                                {appointment.center.name} • {format(appointment.scheduledDate, 'MMM dd, yyyy')}
+                                {appointment.center?.name || 'Center'} • {format(appointment.scheduledDate, 'MMM dd, yyyy')}
                               </p>
                             </div>
                             <CheckCircle className="w-5 h-5 text-success" />

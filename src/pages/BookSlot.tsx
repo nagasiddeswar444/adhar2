@@ -8,31 +8,159 @@ import { CenterPicker } from '@/components/booking/CenterPicker';
 import { BookingConfirmation } from '@/components/booking/BookingConfirmation';
 import { FaceScanVerification } from '@/components/booking/FaceScanVerification';
 import { OnlineUpdateFlow } from '@/components/booking/OnlineUpdateFlow';
-import { SecurityGate } from '@/components/auth/SecurityGate';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { type Center, type TimeSlot, type UpdateType, timeSlots, centers } from '@/data/mockData';
-import { dataService } from '@/lib/dataService';
-import { ChevronLeft, ChevronRight, Check, Calendar, MapPin, FileEdit, Bot, Sparkles, Globe } from 'lucide-react';
+import { centerOperations, timeSlotOperations, appointmentOperations, authOperations, updateTypeOperations } from '@/lib/database';
+import { useAuth } from '@/contexts/AuthContext';
+import { ChevronLeft, ChevronRight, Check, Calendar, MapPin, FileEdit, Bot, Sparkles, Globe, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useUser } from '@/contexts/UserContext';
 
 type Step = 'center' | 'update' | 'slot' | 'confirm' | 'online';
 
+interface CenterData {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  address?: string;
+  capacity: number;
+  currentLoad?: number;
+  predictedLoad?: number;
+}
+
+interface UpdateTypeData {
+  id: string;
+  name: string;
+  description?: string;
+  risk_level?: 'low' | 'medium' | 'high';
+  riskLevel?: 'low' | 'medium' | 'high';
+  requires_verification?: boolean;
+  requiresVerification?: boolean;
+  requires_biometric?: boolean;
+  isBiometric?: boolean;
+  can_do_online?: boolean;
+  canDoOnline?: boolean;
+  estimated_time_minutes?: number;
+  estimatedTime?: string;
+}
+
+interface TimeSlotData {
+  id: string;
+  center_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  available_slots: number;
+  total_capacity: number;
+}
+
 const BookSlot = () => {
   const { t } = useLanguage();
+  const { user: authUser } = useAuth();
+  const { user: userProfile, refreshUser } = useUser();
+  
   const [currentStep, setCurrentStep] = useState<Step>('update');
-  const [selectedCenter, setSelectedCenter] = useState<Center | null>(null);
-  const [selectedType, setSelectedType] = useState<UpdateType | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
+  const [centers, setCenters] = useState<CenterData[]>([]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlotData[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [selectedCenter, setSelectedCenter] = useState<CenterData | null>(null);
+  const [selectedType, setSelectedType] = useState<UpdateTypeData | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<TimeSlotData | null>(null);
   const [isBooked, setIsBooked] = useState(false);
   const [bookingId, setBookingId] = useState('');
+  const [bookingData, setBookingData] = useState<any>(null);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [showFaceScan, setShowFaceScan] = useState(false);
   const [pendingBiometricBooking, setPendingBiometricBooking] = useState(false);
   const [isOnlineFlow, setIsOnlineFlow] = useState(false);
   const [onlineSubmitted, setOnlineSubmitted] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+
+  const [updateTypes, setUpdateTypes] = useState<UpdateTypeData[]>([]);
+  
+  // Fetch update types from database
+  useEffect(() => {
+    const fetchUpdateTypes = async () => {
+      try {
+        const types = await updateTypeOperations.getUpdateTypes();
+        if (types && types.length > 0) {
+          setUpdateTypes(types.map((ut: any) => ({
+            id: ut.id,
+            name: ut.name,
+            description: ut.description,
+            risk_level: ut.risk_level,
+            requires_verification: ut.requires_verification,
+            requires_biometric: ut.requires_biometric,
+            can_do_online: ut.can_do_online,
+            estimated_time_minutes: ut.estimated_time_minutes
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching update types:', error);
+      }
+    };
+    
+    fetchUpdateTypes();
+  }, []);
+
+  // Fetch centers from database on mount
+  useEffect(() => {
+    const fetchCenters = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch centers from database
+        const centersData = await centerOperations.getCenters();
+        if (centersData && centersData.length > 0) {
+          setCenters(centersData.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            city: c.city,
+            state: c.state,
+            address: c.address,
+            capacity: c.capacity || 50,
+            currentLoad: c.currentLoad || Math.floor((c.capacity || 50) * 0.5),
+            predictedLoad: c.predictedLoad || Math.floor((c.capacity || 50) * 0.6)
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching centers:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCenters();
+  }, []);
+
+  // Fetch time slots when center is selected
+  useEffect(() => {
+    const fetchTimeSlots = async () => {
+      if (!selectedCenter) return;
+      
+      try {
+        const slotsData = await timeSlotOperations.getAvailableSlots(selectedCenter.id, new Date().toISOString().split('T')[0]);
+        if (slotsData) {
+          setTimeSlots(slotsData.map((ts: any) => ({
+            id: ts.id,
+            center_id: ts.center_id,
+            date: ts.date,
+            start_time: ts.start_time,
+            end_time: ts.end_time,
+            available_slots: ts.available_slots,
+            total_capacity: ts.total_capacity
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching time slots:', error);
+      }
+    };
+
+    fetchTimeSlots();
+  }, [selectedCenter]);
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -41,17 +169,11 @@ const BookSlot = () => {
 
   // Function to auto-assign optimal slot using "AI" logic
   const autoAssignSlot = () => {
-    // Find the best available slot (lowest load, most availability)
-    const availableSlots = timeSlots.filter(slot => slot.available > 0);
+    const availableSlots = timeSlots.filter(slot => slot.available_slots > 0);
     if (availableSlots.length === 0) return null;
     
-    // Sort by: 1) low risk first, 2) most availability
     const sortedSlots = [...availableSlots].sort((a, b) => {
-      const riskOrder = { low: 0, medium: 1, high: 2 };
-      if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
-        return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
-      }
-      return b.available - a.available;
+      return b.available_slots - a.available_slots;
     });
     
     return sortedSlots[0];
@@ -59,38 +181,27 @@ const BookSlot = () => {
 
   // Handle biometric update type selection - show face scan first
   useEffect(() => {
-    if (selectedType?.isBiometric && pendingBiometricBooking) {
+    if (selectedType?.requires_biometric && pendingBiometricBooking) {
       setIsAutoAssigning(true);
       const timer = setTimeout(() => {
         const optimalSlot = autoAssignSlot();
-        if (optimalSlot) {
+        if (optimalSlot && selectedCenter) {
           setSelectedSlot(optimalSlot);
-          // Auto-assign nearest center too
-          if (!selectedCenter) {
-            setSelectedCenter(centers[0]);
-          }
           setIsAutoAssigning(false);
-          const id = `ADH${Date.now().toString(36).toUpperCase()}`;
-          setBookingId(id);
-          setIsBooked(true);
-          setPendingBiometricBooking(false);
         }
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [selectedType, pendingBiometricBooking, selectedCenter]);
+  }, [selectedType, pendingBiometricBooking, selectedCenter, timeSlots]);
 
   // Handle face scan verification complete
   const handleFaceScanVerified = () => {
     setShowFaceScan(false);
-    if (selectedType?.isBiometric) {
-      // For biometric updates, auto-assign slot
+    if (selectedType?.requires_biometric) {
       setPendingBiometricBooking(true);
-    } else if (selectedType?.canDoOnline && isOnlineFlow) {
-      // For online updates, proceed to online flow step
+    } else if (selectedType?.can_do_online && isOnlineFlow) {
       setCurrentStep('online');
     } else {
-      // For non-biometric in-person updates, proceed to center selection
       setCurrentStep('center');
     }
   };
@@ -110,6 +221,74 @@ const BookSlot = () => {
     setIsOnlineFlow(false);
   };
 
+  // Create appointment in database
+  const createAppointment = async () => {
+    if (!selectedCenter || !selectedType || !selectedSlot || !userProfile) return;
+
+    try {
+      setBookingLoading(true);
+
+      // Get user's aadhaar record ID from auth
+      const userData = await authOperations.getUser(authUser?.id || '');
+      const aadhaarRecordId = userData?.aadhaar_record_id;
+
+      if (!aadhaarRecordId) {
+        console.error('No aadhaar record found for user');
+        return;
+      }
+
+      // Create appointment in database
+      const result = await appointmentOperations.createAppointment({
+        aadhaar_record_id: aadhaarRecordId,
+        center_id: selectedCenter.id,
+        update_type_id: selectedType.id,
+        time_slot_id: selectedSlot.id,
+        scheduled_date: selectedSlot.date,
+        is_online: isOnlineFlow
+      });
+
+      if (result) {
+        setBookingId(result.booking_id || result.id);
+        setBookingData({
+          center: selectedCenter,
+          slot: {
+            id: selectedSlot.id,
+            time: selectedSlot.start_time,
+            date: selectedSlot.date,
+            available: selectedSlot.available_slots,
+            total: selectedSlot.total_capacity
+          },
+          updateType: {
+            id: selectedType.id,
+            name: selectedType.name,
+            riskLevel: selectedType.risk_level,
+            requiresVerification: selectedType.requires_verification,
+            isBiometric: selectedType.requires_biometric,
+            canDoOnline: selectedType.can_do_online,
+            estimatedTime: `${selectedType.estimated_time_minutes || 15} mins`
+          },
+          bookingId: result.booking_id || result.id,
+          userEmail: userProfile.email || authUser?.email || ''
+        });
+        setIsBooked(true);
+        
+        // Refresh user appointments
+        refreshUser();
+      }
+    } catch (error) {
+      console.error('Error creating appointment:', error);
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  // Handle biometric auto-booking
+  useEffect(() => {
+    if (pendingBiometricBooking && selectedSlot && selectedCenter && selectedType && !isBooked && !bookingLoading) {
+      createAppointment();
+    }
+  }, [pendingBiometricBooking, selectedSlot, selectedCenter, selectedType]);
+
   // Dynamic steps based on update type and flow
   const getSteps = () => {
     if (isOnlineFlow) {
@@ -118,7 +297,7 @@ const BookSlot = () => {
         { id: 'online', label: t('booking.submitOnline'), icon: Globe },
       ];
     }
-    if (selectedType?.isBiometric) {
+    if (selectedType?.requires_biometric) {
       return [
         { id: 'update', label: t('booking.updateType'), icon: FileEdit },
         { id: 'center', label: t('booking.selectCenter'), icon: MapPin },
@@ -133,22 +312,17 @@ const BookSlot = () => {
 
   const steps = getSteps();
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep === 'update' && selectedType) {
-      // All updates require face scan verification for security
       setShowFaceScan(true);
     } else if (currentStep === 'center' && selectedCenter) {
-      if (selectedType?.isBiometric) {
-        // Biometric gets auto-assigned
+      if (selectedType?.requires_biometric) {
         setPendingBiometricBooking(true);
       } else {
         setCurrentStep('slot');
       }
     } else if (currentStep === 'slot' && selectedSlot) {
-      // Generate booking ID and confirm
-      const id = `ADH${Date.now().toString(36).toUpperCase()}`;
-      setBookingId(id);
-      setIsBooked(true);
+      await createAppointment();
     }
   };
 
@@ -165,9 +339,8 @@ const BookSlot = () => {
     }
   };
 
-  // Handle choosing online vs in-person for online-capable updates
   const handleProceedOnline = () => {
-    if (selectedType?.canDoOnline) {
+    if (selectedType?.can_do_online) {
       setIsOnlineFlow(true);
       setShowFaceScan(true);
     }
@@ -185,6 +358,7 @@ const BookSlot = () => {
     setSelectedSlot(null);
     setIsBooked(false);
     setBookingId('');
+    setBookingData(null);
     setIsAutoAssigning(false);
     setShowFaceScan(false);
     setPendingBiometricBooking(false);
@@ -199,12 +373,24 @@ const BookSlot = () => {
     return false;
   };
 
-  // Check if current selection can do online
-  const showOnlineOption = currentStep === 'update' && selectedType?.canDoOnline && !selectedType?.isBiometric;
-
+  const showOnlineOption = currentStep === 'update' && selectedType?.can_do_online && !selectedType?.requires_biometric;
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
 
-  // Online submission success view
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="pt-24 pb-16">
+          <div className="container mx-auto px-4 text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-primary" />
+            <p className="text-muted-foreground">Loading booking options...</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
   if (onlineSubmitted && selectedType) {
     return (
       <div className="min-h-screen bg-background">
@@ -221,7 +407,7 @@ const BookSlot = () => {
               </div>
               <h1 className="text-2xl font-bold text-foreground mb-2">{t('booking.requestSubmitted')}</h1>
               <p className="text-muted-foreground mb-6">
-                Your online {selectedType.name.toLowerCase()} {t('booking.requestSubmittedDesc')}
+                Your online {selectedType.name.toLowerCase()} request has been submitted.
               </p>
               <Button onClick={handleReset} variant="gold" size="lg">
                 {t('booking.startNewRequest')}
@@ -234,18 +420,18 @@ const BookSlot = () => {
     );
   }
 
-  if (isBooked && selectedCenter && selectedSlot && selectedType) {
+  if (isBooked && bookingData) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <main className="pt-24 pb-16">
           <div className="container mx-auto px-4">
             <BookingConfirmation
-              center={selectedCenter}
-              slot={selectedSlot}
-              updateType={selectedType}
-              bookingId={bookingId}
-              userEmail="user@aadhaar.linked.email"
+              center={bookingData.center}
+              slot={bookingData.slot}
+              updateType={bookingData.updateType}
+              bookingId={bookingData.bookingId}
+              userEmail={bookingData.userEmail}
               onReset={handleReset}
             />
           </div>
@@ -255,7 +441,6 @@ const BookSlot = () => {
     );
   }
 
-  // Show face scan overlay for biometric updates
   const renderFaceScan = showFaceScan && (
     <FaceScanVerification
       onVerified={handleFaceScanVerified}
@@ -269,7 +454,6 @@ const BookSlot = () => {
       <Header />
       <main className="pt-24 pb-16">
         <div className="container mx-auto px-4">
-          {/* Page Header */}
           <div className="text-center mb-8">
             <motion.h1
               initial={{ opacity: 0, y: -10 }}
@@ -283,7 +467,6 @@ const BookSlot = () => {
             </p>
           </div>
 
-          {/* Progress Steps */}
           <div className="max-w-2xl mx-auto mb-10">
             <div className="flex items-center justify-between">
               {steps.map((step, index) => {
@@ -333,7 +516,6 @@ const BookSlot = () => {
             </div>
           </div>
 
-          {/* Step Content */}
           <div className="max-w-3xl mx-auto">
             <AnimatePresence mode="wait">
               {currentStep === 'center' && (
@@ -344,8 +526,9 @@ const BookSlot = () => {
                   exit={{ opacity: 0, x: -20 }}
                 >
                   <CenterPicker
+                    centers={centers}
                     selectedCenter={selectedCenter}
-                    onSelectCenter={setSelectedCenter}
+                    onSelectCenter={(center) => setSelectedCenter(center)}
                   />
                 </motion.div>
               )}
@@ -358,12 +541,12 @@ const BookSlot = () => {
                   exit={{ opacity: 0, x: -20 }}
                 >
                   <UpdateTypePicker
+                    updateTypes={updateTypes}
                     selectedType={selectedType}
-                    onSelectType={setSelectedType}
+                    onSelectType={(type) => setSelectedType(type)}
                   />
                   
-                  {/* AI Auto-Assignment Message for Biometric Updates */}
-                  {selectedType?.isBiometric && (
+                  {selectedType?.requires_biometric && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -406,7 +589,7 @@ const BookSlot = () => {
                 </motion.div>
               )}
 
-              {currentStep === 'slot' && !selectedType?.isBiometric && (
+              {currentStep === 'slot' && !selectedType?.requires_biometric && (
                 <motion.div
                   key="slot"
                   initial={{ opacity: 0, x: 20 }}
@@ -414,8 +597,9 @@ const BookSlot = () => {
                   exit={{ opacity: 0, x: -20 }}
                 >
                   <SlotPicker
+                    timeSlots={timeSlots}
                     selectedSlot={selectedSlot}
-                    onSelectSlot={setSelectedSlot}
+                    onSelectSlot={(slot) => setSelectedSlot(slot)}
                   />
                 </motion.div>
               )}
@@ -435,11 +619,9 @@ const BookSlot = () => {
                 </motion.div>
               )}
             </AnimatePresence>
-
           </div>
         </div>
         
-        {/* Navigation - Fixed at bottom for visibility - hidden during face scan and online flow */}
         {!showFaceScan && currentStep !== 'online' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -450,7 +632,7 @@ const BookSlot = () => {
             <Button
               variant="outline"
               onClick={handleBack}
-              disabled={currentStep === 'update'}
+              disabled={currentStep === 'update' || bookingLoading}
             >
               <ChevronLeft className="w-4 h-4 mr-2" />
               {t('booking.back')}
@@ -458,7 +640,6 @@ const BookSlot = () => {
             <AnimatePresence mode="wait">
               {canProceed() ? (
                 showOnlineOption ? (
-                  // For online-capable updates, show both options
                   <motion.div
                     key="online-options"
                     initial={{ scale: 0.9, opacity: 0 }}
@@ -495,10 +676,17 @@ const BookSlot = () => {
                       variant="gold"
                       size="lg"
                       onClick={handleNext}
+                      disabled={bookingLoading}
                       className="shadow-glow"
                     >
-                      {currentStep === 'slot' ? t('booking.confirmBooking') : currentStep === 'update' ? t('booking.verifyContinue') : t('booking.continue')}
-                      {currentStep !== 'slot' && <ChevronRight className="w-4 h-4 ml-2" />}
+                      {bookingLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <>
+                          {currentStep === 'slot' ? t('booking.confirmBooking') : currentStep === 'update' ? t('booking.verifyContinue') : t('booking.continue')}
+                          {currentStep !== 'slot' && <ChevronRight className="w-4 h-4 ml-2" />}
+                        </>
+                      )}
                     </Button>
                   </motion.div>
                 )

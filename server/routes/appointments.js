@@ -91,43 +91,66 @@ router.get('/:id', async (req, res) => {
 
 // Create appointment
 router.post('/', async (req, res) => {
+  const connection = await pool.getConnection();
+  
   try {
-    const { aadhaar_record_id, center_id, update_type_id, time_slot_id, scheduled_date, is_online } = req.body;
+    const { aadhaar_record_id, center_id, update_type_id, time_slot_id, scheduled_date, scheduled_time, is_online } = req.body;
 
-    if (!aadhaar_record_id || !center_id || !update_type_id || !time_slot_id || !scheduled_date) {
+    if (!aadhaar_record_id || !center_id || !update_type_id || !scheduled_date) {
       return res.status(400).json({ error: 'Required fields missing' });
     }
 
-    // Check if slot is available
-    const [slots] = await pool.execute(
-      'SELECT * FROM time_slots WHERE id = ? AND available_slots > 0',
-      [time_slot_id]
-    );
+    let slotTime = scheduled_time;
+    let slotIdToStore = time_slot_id;
 
-    if (slots.length === 0) {
-      return res.status(400).json({ error: 'Time slot not available' });
+    // Handle generated slots differently
+    if (time_slot_id && time_slot_id.startsWith('generated-')) {
+      // For generated slots, store NULL in time_slot_id
+      slotIdToStore = null;
+    } else if (time_slot_id) {
+      // Check if slot is available (only for non-generated slots)
+      const [slots] = await connection.execute(
+        'SELECT * FROM time_slots WHERE id = ? AND available_slots > 0',
+        [time_slot_id]
+      );
+
+      if (slots.length === 0) {
+        return res.status(400).json({ error: 'Time slot not available' });
+      }
+
+      // Decrease available slots for real slots
+      await connection.execute(
+        'UPDATE time_slots SET available_slots = available_slots - 1 WHERE id = ?',
+        [time_slot_id]
+      );
+
+      slotTime = slots[0].start_time;
     }
 
     const id = uuidv4();
     const bookingId = generateBookingId();
 
-    await pool.execute(
-      `INSERT INTO appointments (id, booking_id, aadhaar_record_id, center_id, update_type_id, time_slot_id, scheduled_date, status, is_online, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, NOW(), NOW())`,
-      [id, bookingId, aadhaar_record_id, center_id, update_type_id, time_slot_id, scheduled_date, is_online || false]
+    await connection.execute(
+      `INSERT INTO appointments (id, booking_id, aadhaar_record_id, center_id, update_type_id, time_slot_id, scheduled_date, scheduled_time, status, is_online, queue_position, estimated_wait_minutes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, NULL, NULL, NOW(), NOW())`,
+      [id, bookingId, aadhaar_record_id, center_id, update_type_id, slotIdToStore, scheduled_date, slotTime, is_online || false]
     );
 
-    // Decrease available slots
-    await pool.execute(
-      'UPDATE time_slots SET available_slots = available_slots - 1 WHERE id = ?',
-      [time_slot_id]
-    );
-
-    const [newAppointment] = await pool.execute('SELECT * FROM appointments WHERE id = ?', [id]);
+    const [newAppointment] = await connection.execute('SELECT * FROM appointments WHERE id = ?', [id]);
+    
+    // Add the time info to response for generated slots
+    if (slotTime && newAppointment[0]) {
+      newAppointment[0].start_time = slotTime;
+    }
+    
+    await connection.commit();
     res.status(201).json(newAppointment[0]);
   } catch (error) {
+    await connection.rollback();
     console.error('Create appointment error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    connection.release();
   }
 });
 
@@ -142,17 +165,15 @@ router.put('/:id/status', async (req, res) => {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const completedAt = status === 'completed' ? 'NOW()' : 'NULL';
-
     await pool.execute(
       `UPDATE appointments SET status = ?, completed_at = ${status === 'completed' ? 'NOW()' : 'NULL'}, updated_at = NOW() WHERE id = ?`,
       [status, id]
     );
 
-    // If cancelled, release the time slot
+    // If cancelled, release the time slot (only if it exists)
     if (status === 'cancelled') {
       const [appointments] = await pool.execute('SELECT time_slot_id FROM appointments WHERE id = ?', [id]);
-      if (appointments.length > 0) {
+      if (appointments.length > 0 && appointments[0].time_slot_id) {
         await pool.execute(
           'UPDATE time_slots SET available_slots = available_slots + 1 WHERE id = ?',
           [appointments[0].time_slot_id]
@@ -193,11 +214,13 @@ router.put('/:id/cancel', async (req, res) => {
       ['cancelled', id]
     );
 
-    // Release time slot
-    await pool.execute(
-      'UPDATE time_slots SET available_slots = available_slots + 1 WHERE id = ?',
-      [appointments[0].time_slot_id]
-    );
+    // Release time slot only if it exists
+    if (appointments[0].time_slot_id) {
+      await pool.execute(
+        'UPDATE time_slots SET available_slots = available_slots + 1 WHERE id = ?',
+        [appointments[0].time_slot_id]
+      );
+    }
 
     res.json({ message: 'Appointment cancelled successfully' });
   } catch (error) {

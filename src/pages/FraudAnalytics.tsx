@@ -1,13 +1,51 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { FraudComparisonChart } from '@/components/fraud/FraudComparisonChart';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Shield, AlertTriangle, Lock, Eye, UserCheck, FileCheck } from 'lucide-react';
+import { analyticsOperations, fraudLogOperations } from '@/lib/database';
+import { Shield, AlertTriangle, Lock, Eye, UserCheck, FileCheck, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+
+interface FraudMetrics {
+  reduction: number;
+  detectionRate: number;
+  avgTime: number;
+}
 
 const FraudAnalytics = () => {
   const { t } = useLanguage();
+  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<FraudMetrics>({
+    reduction: 85,
+    detectionRate: 97,
+    avgTime: 2
+  });
+
+  useEffect(() => {
+    const fetchFraudMetrics = async () => {
+      try {
+        setLoading(true);
+        const fraudData = await analyticsOperations.getFraudStats();
+        if (fraudData && fraudData.before && fraudData.after) {
+          const before = fraudData.before;
+          const after = fraudData.after;
+          const beforeTotal = before.total_events || 1;
+          const afterTotal = after.total_events || 1;
+          const reduction = Math.round(((beforeTotal - afterTotal) / beforeTotal) * 100);
+          const afterResolved = after.resolved || 0;
+          const detectionRate = beforeTotal > 0 ? Math.round((afterResolved / afterTotal) * 100) : 0;
+          setMetrics({ reduction: Math.abs(reduction), detectionRate, avgTime: 2 });
+        }
+      } catch (error) {
+        console.error('Error fetching fraud metrics:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFraudMetrics();
+  }, []);
 
   const securityFeatures = [
     {
@@ -73,7 +111,7 @@ const FraudAnalytics = () => {
                   <Shield className="w-8 h-8 text-success" />
                 </div>
                 <div>
-                  <p className="text-3xl font-bold text-success">85%</p>
+                  <p className="text-3xl font-bold text-success">{metrics.reduction}%</p>
                   <p className="text-sm text-muted-foreground">{t('fraud.reduction')}</p>
                 </div>
               </div>
@@ -84,7 +122,7 @@ const FraudAnalytics = () => {
                   <AlertTriangle className="w-8 h-8 text-primary" />
                 </div>
                 <div>
-                  <p className="text-3xl font-bold text-primary">97%</p>
+                  <p className="text-3xl font-bold text-primary">{metrics.detectionRate}%</p>
                   <p className="text-sm text-muted-foreground">{t('fraud.detectionRate')}</p>
                 </div>
               </div>
@@ -95,7 +133,7 @@ const FraudAnalytics = () => {
                   <Lock className="w-8 h-8 text-warning" />
                 </div>
                 <div>
-                  <p className="text-3xl font-bold text-warning">2hrs</p>
+                  <p className="text-3xl font-bold text-warning">{metrics.avgTime}hrs</p>
                   <p className="text-sm text-muted-foreground">{t('fraud.avgTime')}</p>
                 </div>
               </div>

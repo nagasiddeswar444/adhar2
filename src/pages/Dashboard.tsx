@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { DemandChart } from '@/components/dashboard/DemandChart';
@@ -5,19 +6,62 @@ import { CenterLoadCard } from '@/components/dashboard/CenterLoadCard';
 import { RiskPieChart } from '@/components/dashboard/RiskPieChart';
 import { HourlyLoadChart } from '@/components/dashboard/HourlyLoadChart';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { bookingStats } from '@/data/mockData';
+import { analyticsOperations, fraudLogOperations } from '@/lib/database';
 import { motion } from 'framer-motion';
-import { Users, CheckCircle, ShieldAlert, Clock, TrendingUp } from 'lucide-react';
+import { Users, CheckCircle, ShieldAlert, Clock, TrendingUp, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+
+interface DashboardStats {
+  totalBookings: number;
+  completedUpdates: number;
+  fraudPrevented: number;
+  avgWaitTime: number;
+  satisfactionRate: number;
+}
 
 const Dashboard = () => {
   const { t } = useLanguage();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalBookings: 0,
+    completedUpdates: 0,
+    fraudPrevented: 0,
+    avgWaitTime: 0,
+    satisfactionRate: 0
+  });
+
+  useEffect(() => {
+    const fetchDashboardStats = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch dashboard data from database
+        const dashboardData = await analyticsOperations.getDashboardStats();
+        
+        if (dashboardData && dashboardData.todayStats) {
+          setStats({
+            totalBookings: dashboardData.todayStats.total_appointments || 0,
+            completedUpdates: dashboardData.todayStats.completed || 0,
+            fraudPrevented: dashboardData.fraudStats?.unresolved || 0,
+            avgWaitTime: 12,
+            satisfactionRate: 94.5
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardStats();
+  }, []);
 
   const statCards = [
-    { icon: Users, label: t('dashboard.totalBookings'), value: bookingStats.totalBookings.toLocaleString(), color: 'text-primary' },
-    { icon: CheckCircle, label: t('dashboard.completed'), value: bookingStats.completedUpdates.toLocaleString(), color: 'text-success' },
-    { icon: ShieldAlert, label: t('dashboard.fraudsPrevented'), value: bookingStats.fraudPrevented.toLocaleString(), color: 'text-warning' },
-    { icon: Clock, label: t('dashboard.avgWait'), value: `${bookingStats.avgWaitTime} ${t('dashboard.mins')}`, color: 'text-primary' },
+    { icon: Users, label: t('dashboard.totalBookings'), value: stats.totalBookings.toLocaleString(), color: 'text-primary' },
+    { icon: CheckCircle, label: t('dashboard.completed'), value: stats.completedUpdates.toLocaleString(), color: 'text-success' },
+    { icon: ShieldAlert, label: t('dashboard.fraudsPrevented'), value: stats.fraudPrevented.toLocaleString(), color: 'text-warning' },
+    { icon: Clock, label: t('dashboard.avgWait'), value: `${stats.avgWaitTime} ${t('dashboard.mins')}`, color: 'text-primary' },
   ];
   return (
     <div className="min-h-screen bg-background">
