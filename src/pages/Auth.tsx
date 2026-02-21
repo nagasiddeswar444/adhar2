@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Shield, Loader2, CheckCircle2,
-  Eye, EyeOff, ArrowRight, Lock, RefreshCw,
+  Eye, EyeOff, ArrowRight, Lock, RefreshCw, Phone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { CaptchaInput } from '@/components/auth/CaptchaInput';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/language/LanguageSelector';
+import { authOperations } from '@/lib/database';
 import { cn } from '@/lib/utils';
 
 // Generate random CAPTCHA code
@@ -41,6 +42,7 @@ const Auth = () => {
   const [aadharNumber, setAadharNumber] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [phoneLoading, setPhoneLoading] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -53,7 +55,6 @@ const Auth = () => {
   // CAPTCHA
   const [captchaCode, setCaptchaCode] = useState(generateCaptcha());
   const [captchaInput, setCaptchaInput] = useState('');
-  const [captchaVerified, setCaptchaVerified] = useState(false);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -67,6 +68,42 @@ const Auth = () => {
       return () => clearTimeout(id);
     }
   }, [otpTimer]);
+
+  // Fetch phone number when Aadhaar number changes (12 digits)
+  useEffect(() => {
+    const fetchPhone = async () => {
+      if (aadharNumber.length === 12 && /^\d+$/.test(aadharNumber)) {
+        setPhoneLoading(true);
+        try {
+          const result = await authOperations.getPhoneByAadhaar(aadharNumber);
+          if (result.exists) {
+            // Only set phone if it exists in the database
+            if (result.phone) {
+              setPhone(result.phone);
+            }
+            // Only set email if it exists in the database
+            if (result.email) {
+              setEmail(result.email);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching phone:', err);
+        } finally {
+          setPhoneLoading(false);
+        }
+      } else {
+        // Only clear if not in signup mode with fetched phone
+        if (mode !== 'signup') {
+          setPhone('');
+          setEmail('');
+        }
+      }
+    };
+    
+    // Debounce the fetch
+    const timer = setTimeout(fetchPhone, 500);
+    return () => clearTimeout(timer);
+  }, [aadharNumber]);
 
   const handleSubmit = async () => {
     setError('');
@@ -91,7 +128,6 @@ const Auth = () => {
     if (captchaInput.toUpperCase() !== captchaCode) {
       setError('Incorrect CAPTCHA. Please try again.');
       setCaptchaInput('');
-      // Generate new CAPTCHA for next attempt
       setCaptchaCode(generateCaptcha());
       return;
     }
@@ -100,11 +136,9 @@ const Auth = () => {
     try {
       // For signup, send OTP first
       if (mode === 'signup') {
-        // Format phone number with country code if not provided
-        const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
-        await sendOtp(aadharNumber, 'sms', 'mobile_verification', formattedPhone);
+        await sendOtp(aadharNumber, 'sms', 'mobile_verification');
         setOtpSent(true);
-        setOtpTimer(30);
+        setOtpTimer(120);
       } else {
         // For signin, verify credentials
         const ok = await login(aadharNumber, password);
@@ -124,22 +158,30 @@ const Auth = () => {
     setError('');
     setLoading(true);
     
-    const ok = await verifyOtp(otp, aadharNumber);
+    const ok = await verifyOtp(otp, aadharNumber, 'mobile_verification');
     if (ok) {
-      // Create account after OTP verification
-      // Use dummy values for personalInfo - can be collected in a separate form
+      // Use the phone from database - do NOT use any fallback
+      const phoneToUse = phone;
+      const emailToUse = email;
+
+      if (!phoneToUse) {
+        setError('No phone number found. Please contact support.');
+        setLoading(false);
+        return;
+      }
+
       await signup(
         aadharNumber, 
         password,
-        email || `${aadharNumber}@example.com`,
-        phone || '+91' + aadharNumber.slice(-10),
+        emailToUse || `${aadharNumber}@example.com`,
+        phoneToUse,
         {
-          fullName: 'User',
-          dateOfBirth: '1990-01-01',
-          gender: 'Male',
-          address: 'Address',
-          state: 'State',
-          pincode: '000000'
+          fullName: '',
+          dateOfBirth: '',
+          gender: '',
+          address: '',
+          state: '',
+          pincode: ''
         }
       );
       setVerified(true);
@@ -153,8 +195,8 @@ const Auth = () => {
   const handleResendOtp = async () => {
     setError('');
     setLoading(true);
-    await sendOtp(aadharNumber, 'sms');
-    setOtpTimer(30);
+    await sendOtp(aadharNumber, 'sms', 'mobile_verification');
+    setOtpTimer(120);
     setLoading(false);
   };
 
@@ -309,20 +351,33 @@ const Auth = () => {
                   <p className="text-xs text-muted-foreground mt-1">Enter your 12-digit Aadhar number</p>
                 </div>
 
-                {/* Phone for signup */}
+                {/* Phone Number (auto-filled from database) - Only for signup */}
                 {mode === 'signup' && (
                   <div>
                     <label className="text-sm font-medium text-foreground mb-1.5 block">
+                      <Phone className="w-4 h-4 inline mr-1" />
                       Mobile Number
                     </label>
-                    <Input 
-                      type="tel" 
-                      placeholder="6300395240" 
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      maxLength={10}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">Enter your 10-digit mobile number</p>
+                    <div className="relative">
+                      {phoneLoading ? (
+                        <Input 
+                          type="text" 
+                          placeholder="Fetching mobile number..." 
+                          disabled
+                          className="bg-muted"
+                        />
+                      ) : (
+                        <Input 
+                          type="text" 
+                          value={phone}
+                          readOnly
+                          placeholder="Enter Aadhaar number to fetch mobile"
+                        />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {phoneLoading ? 'Fetching from database...' : phone ? 'Mobile number fetched from your Aadhaar record' : 'Mobile number will be fetched from your Aadhaar'}
+                    </p>
                   </div>
                 )}
 
@@ -393,7 +448,7 @@ const Auth = () => {
                   className="w-full"
                   size="lg"
                   onClick={handleSubmit}
-                  disabled={loading || !aadharNumber || !password || (mode === 'signup' && (!confirmPassword || !phone)) || !captchaInput}
+                  disabled={loading || !aadharNumber || !password || (mode === 'signup' && (!confirmPassword || phoneLoading)) || !captchaInput}
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
                   {mode === 'signin' ? t('auth.signIn') : t('auth.signUp')}
@@ -413,6 +468,11 @@ const Auth = () => {
                   <p className="text-xs text-muted-foreground">
                     Aadhar: <span className="font-mono font-bold text-foreground">{aadharNumber}</span>
                   </p>
+                  {phone && (
+                    <p className="text-xs text-muted-foreground">
+                      Phone: <span className="font-mono font-bold text-foreground">{phone}</span>
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground mt-2">
                     {t('auth.demoOtpInstruction')} <span className="font-mono font-bold text-foreground">123456</span>
                   </p>
@@ -428,14 +488,17 @@ const Auth = () => {
                   </InputOTP>
                 </div>
 
-                {/* Timer */}
+                {/* Timer - Updated to show 2 minutes in MM:SS format */}
                 <div className="text-center">
                   {otpTimer > 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      OTP expires in <span className="font-bold text-foreground">{otpTimer}s</span>
+                      OTP expires in <span className="font-bold text-foreground">
+                        {otpTimer >= 60 ? `${Math.floor(otpTimer / 60)}:${(otpTimer % 60).toString().padStart(2, '0')}` : `${otpTimer}s`}
+                      </span>
                     </p>
                   ) : (
                     <Button variant="ghost" size="sm" onClick={handleResendOtp} disabled={loading}>
+                      <RefreshCw className="w-4 h-4 mr-1" />
                       {t('auth.resendOtp')}
                     </Button>
                   )}

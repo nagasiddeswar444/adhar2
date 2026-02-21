@@ -77,6 +77,10 @@ class ApiClient {
 
     getUser: (id: string) => this.request<any>(`/auth/user/${id}`),
 
+    // Get phone by Aadhaar number
+    getPhoneByAadhaar: (aadhaarNumber: string) =>
+      this.request<{ exists: boolean; phone?: string; email?: string }>(`/get-phone?aadhaarNumber=${aadhaarNumber}`),
+
     // Password reset endpoints
     forgotPassword: (aadhaarNumber: string, method: 'sms' | 'email' = 'sms') =>
       this.request<{ message: string }>('/auth/forgot-password', {
@@ -90,118 +94,72 @@ class ApiClient {
         body: { aadhaarNumber, otp, newPassword },
       }),
 
-    // Email verification endpoints
-    verifyEmail: (token: string) =>
-      this.request<{ message: string; emailVerified: boolean; otpSentToMobile?: boolean; otp?: string }>('/auth/verify-email?token=' + token, {
-        method: 'GET',
+    resendVerification: (email?: string, aadhaarNumber?: string) =>
+      this.request<{ message: string }>('/auth/resend-verification', {
+        method: 'POST',
+        body: { email, aadhaarNumber },
       }),
+
+    verifyEmail: (token: string) =>
+      this.request<{ message: string; emailVerified: boolean; otpSentToMobile?: boolean; otp?: string }>(`/auth/verify-email?token=${token}`),
 
     verifyEmailOTP: (aadhaarNumber: string, otp: string) =>
       this.request<{ message: string }>('/auth/verify-email-otp', {
         method: 'POST',
         body: { aadhaarNumber, otp },
       }),
-
-    resendVerification: (email?: string, aadhaarNumber?: string) =>
-      this.request<{ message: string }>('/auth/resend-verification', {
-        method: 'POST',
-        body: { email, aadhaarNumber },
-      }),
   };
 
   // ============ CENTERS ============
   centers = {
     getAll: (params?: { city?: string; state?: string }) => {
-      const query = new URLSearchParams(params as Record<string, string>).toString();
-      return this.request<any[]>(`/centers${query ? `?${query}` : ''}`);
+      const query = params ? '?' + new URLSearchParams(params as any).toString() : '';
+      return this.request<any[]>(`/centers${query}`);
     },
 
     getById: (id: string) => this.request<any>(`/centers/${id}`),
 
-    getNearby: (lat: number, lng: number, radius?: number) => {
-      const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
-      if (radius) params.append('radius', radius.toString());
-      return this.request<any[]>(`/centers/nearby?${params}`);
-    },
-
-    create: (data: any) => this.request('/centers', { method: 'POST', body: data }),
-
-    update: (id: string, data: any) =>
-      this.request(`/centers/${id}`, { method: 'PUT', body: data }),
-
-    delete: (id: string) =>
-      this.request(`/centers/${id}`, { method: 'DELETE' }),
-  };
-
-  // ============ APPOINTMENTS ============
-  appointments = {
-    getByAadhaar: (aadhaarRecordId: string) =>
-      this.request<any[]>(`/appointments/aadhaar/${aadhaarRecordId}`),
-
-    getByBookingId: (bookingId: string) =>
-      this.request<any>(`/appointments/booking/${bookingId}`),
-
-    getById: (id: string) => this.request<any>(`/appointments/${id}`),
-
-    create: (data: {
-      aadhaar_record_id: string;
-      center_id: string;
-      update_type_id: string;
-      time_slot_id: string;
-      scheduled_date: string;
-      is_online?: boolean;
-    }) => this.request('/appointments', { method: 'POST', body: data }),
-
-    updateStatus: (id: string, status: string) =>
-      this.request(`/appointments/${id}/status`, {
-        method: 'PUT',
-        body: { status },
-      }),
-
-    cancel: (id: string) =>
-      this.request(`/appointments/${id}/cancel`, { method: 'PUT' }),
-  };
-
-  // ============ TIME SLOTS ============
-  timeSlots = {
-    getByCenter: (centerId: string, date?: string) => {
-      const params = date ? `?date=${date}` : '';
-      return this.request<any[]>(`/time-slots/center/${centerId}${params}`);
-    },
-
-    getAvailable: (centerId: string, date: string) =>
-      this.request<any[]>(`/time-slots/available?centerId=${centerId}&date=${date}`),
-
-    getById: (id: string) => this.request<any>(`/time-slots/${id}`),
-
-    create: (data: any) => this.request('/time-slots', { method: 'POST', body: data }),
-
-    update: (id: string, data: any) =>
-      this.request(`/time-slots/${id}`, { method: 'PUT', body: data }),
-
-    delete: (id: string) =>
-      this.request(`/time-slots/${id}`, { method: 'DELETE' }),
+    getNearby: (lat: number, lng: number, radiusKm: number = 10) =>
+      this.request<any[]>(`/centers/nearby?lat=${lat}&lng=${lng}&radius=${radiusKm}`),
   };
 
   // ============ UPDATE TYPES ============
   updateTypes = {
     getAll: (onlineOnly?: boolean) => {
-      const params = onlineOnly ? '?onlineOnly=true' : '';
-      return this.request<any[]>(`/update-types${params}`);
+      const query = onlineOnly ? '?online=true' : '';
+      return this.request<any[]>(`/update-types${query}`);
     },
 
     getById: (id: string) => this.request<any>(`/update-types/${id}`),
 
-    getBiometricRequired: () =>
-      this.request<any[]>('/update-types/biometric/required'),
+    getBiometricRequired: () => this.request<any[]>('/update-types?biometric=true'),
+  };
 
-    create: (data: any) => this.request('/update-types', { method: 'POST', body: data }),
+  // ============ TIME SLOTS ============
+  timeSlots = {
+    getAvailable: (centerId: string, date: string) =>
+      this.request<any[]>(`/time-slots/available?center_id=${centerId}&date=${date}`),
 
-    update: (id: string, data: any) =>
-      this.request(`/update-types/${id}`, { method: 'PUT', body: data }),
+    getByCenter: (centerId: string) => this.request<any[]>(`/time-slots/center/${centerId}`),
 
-    delete: (id: string) =>
-      this.request(`/update-types/${id}`, { method: 'DELETE' }),
+    getById: (id: string) => this.request<any>(`/time-slots/${id}`),
+  };
+
+  // ============ APPOINTMENTS ============
+  appointments = {
+    create: (data: any) => this.request<any>('/appointments', { method: 'POST', body: data }),
+
+    getById: (id: string) => this.request<any>(`/appointments/${id}`),
+
+    getByBookingId: (bookingId: string) => this.request<any>(`/appointments/booking/${bookingId}`),
+
+    getByAadhaar: (aadhaarRecordId: string) =>
+      this.request<any[]>(`/appointments/aadhaar/${aadhaarRecordId}`),
+
+    updateStatus: (id: string, status: string) =>
+      this.request(`/appointments/${id}/status`, { method: 'PUT', body: { status } }),
+
+    cancel: (id: string) => this.request(`/appointments/${id}`, { method: 'DELETE' }),
   };
 
   // ============ AADHAAR RECORDS ============
@@ -236,8 +194,7 @@ class ApiClient {
         body: { status, review_notes: reviewNotes },
       }),
 
-    delete: (id: string) =>
-      this.request(`/documents/${id}`, { method: 'DELETE' }),
+    delete: (id: string) => this.request(`/documents/${id}`, { method: 'DELETE' }),
   };
 
   // ============ ANALYTICS ============

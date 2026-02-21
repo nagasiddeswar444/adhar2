@@ -277,6 +277,17 @@ export const authOperations = {
     }
   },
 
+  // Get phone by Aadhaar number
+  async getPhoneByAadhaar(aadhaarNumber: string): Promise<{ exists: boolean; phone?: string; email?: string }> {
+    try {
+      const result = await api.auth.getPhoneByAadhaar(aadhaarNumber);
+      return result;
+    } catch (error) {
+      console.error('Get phone by Aadhaar error:', error);
+      return { exists: false };
+    }
+  },
+
   // Check if email exists
   async emailExists(email: string): Promise<boolean> {
     try {

@@ -17,6 +17,9 @@ const aadhaarRecordsRoutes = require('./routes/aadhaarRecords');
 const documentsRoutes = require('./routes/documents');
 const analyticsRoutes = require('./routes/analytics');
 const fraudLogsRoutes = require('./routes/fraudLogs');
+const smsRoutes = require('./routes/sms');
+const otpRoutes = require('./routes/otp');
+const getPhoneRoutes = require('./routes/getPhone');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +50,9 @@ app.use('/api/aadhaar-records', aadhaarRecordsRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/fraud-logs', fraudLogsRoutes);
+app.use('/api/sms', smsRoutes);
+app.use('/api/otp', otpRoutes);
+app.use('/api', getPhoneRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

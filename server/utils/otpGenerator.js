@@ -10,7 +10,7 @@ const generateOTP = () => {
 };
 
 // Store OTP in database
-const storeOTP = async (aadhaarNumber, otp, type = 'login', expiresInMinutes = 1.5) => {
+const storeOTP = async (aadhaarNumber, otp, type = 'login', expiresInMinutes = 2) => {
   const id = uuidv4();
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
@@ -32,10 +32,19 @@ const storeOTP = async (aadhaarNumber, otp, type = 'login', expiresInMinutes = 1
 
 // Verify OTP
 const verifyOTP = async (aadhaarNumber, otp, type = 'login') => {
-  const [records] = await pool.execute(
+  // First try exact type match
+  let [records] = await pool.execute(
     'SELECT * FROM otp_verification WHERE aadhaar_number = ? AND type = ? AND used = FALSE',
     [aadhaarNumber, type]
   );
+
+  // If no record found with exact type, try to find any unused OTP for this aadhaar number
+  if (records.length === 0) {
+    [records] = await pool.execute(
+      'SELECT * FROM otp_verification WHERE aadhaar_number = ? AND used = FALSE ORDER BY created_at DESC LIMIT 1',
+      [aadhaarNumber]
+    );
+  }
 
   if (records.length === 0) {
     return { valid: false, error: 'OTP not found or already used' };
@@ -71,8 +80,8 @@ const verifyOTP = async (aadhaarNumber, otp, type = 'login') => {
 const sendOTP = async (aadhaarNumber, method = 'sms', type = 'login', phoneNumber = null) => {
   const otp = generateOTP();
 
-  // Store OTP in database with 1:30 minute expiration
-  await storeOTP(aadhaarNumber, otp, type, 1.5);
+  // Store OTP in database with 2 minute expiration
+  await storeOTP(aadhaarNumber, otp, type, 2);
 
   // Get user email/phone for sending
   let user = null;

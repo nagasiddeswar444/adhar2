@@ -1,37 +1,64 @@
 // SMS Service Utility
-// In production, integrate with services like Twilio, Nexmo, etc.
+// Using Twilio for SMS delivery
 
-require('dotenv').config();
+const dotenv = require('dotenv');
+dotenv.config();
 
-// Send SMS using Twilio (example)
+// Initialize Twilio client
+const twilio = require('twilio');
+
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+
+let client;
+try {
+  client = twilio(accountSid, authToken);
+  console.log('✅ Twilio client initialized successfully');
+} catch (error) {
+  console.error('❌ Failed to initialize Twilio client:', error.message);
+  client = null;
+}
+
+// Send SMS using Twilio
 const sendSMS = async (phoneNumber, message) => {
-  // For development/testing, use console logging
-  if (process.env.NODE_ENV === 'development' || !process.env.TWILIO_ACCOUNT_SID) {
-    console.log('=== SMS ===');
-    console.log('To:', phoneNumber);
+  // Remove + and any spaces from phone number
+  let cleanNumber = phoneNumber.replace(/[+\s]/g, '');
+  
+  // Add country code if not present (assume India +91)
+  if (!cleanNumber.startsWith('+') && !cleanNumber.startsWith('91')) {
+    if (cleanNumber.length === 10) {
+      cleanNumber = '+91' + cleanNumber;
+    } else {
+      cleanNumber = '+' + cleanNumber;
+    }
+  } else if (cleanNumber.startsWith('91') && cleanNumber.length === 12) {
+    cleanNumber = '+' + cleanNumber;
+  }
+  
+  // For development/testing without Twilio, use console logging
+  if (!client || process.env.NODE_ENV === 'development' && !process.env.TWILIO_ACCOUNT_SID) {
+    console.log('=== SMS (Development Mode) ===');
+    console.log('To:', cleanNumber);
     console.log('Message:', message);
-    console.log('=============');
+    console.log('==============================');
     return { success: true, sid: 'dev-' + Date.now() };
   }
 
-  // Production: Use Twilio
+  // Production: Use Twilio API
   try {
-    const twilio = require('twilio');
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-
     const result = await client.messages.create({
       body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phoneNumber
+      from: twilioPhoneNumber,
+      to: cleanNumber
     });
 
-    console.log('SMS sent:', result.sid);
+    console.log('✅ SMS sent successfully via Twilio');
+    console.log('Message SID:', result.sid);
+    console.log('Status:', result.status);
     return { success: true, sid: result.sid };
   } catch (error) {
-    console.error('Error sending SMS:', error);
+    console.error('❌ Twilio Error:', error.message);
     return { success: false, error: error.message };
   }
 };
