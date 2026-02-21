@@ -5,10 +5,20 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 // Create transporter (configure for your email service)
-const createTransporter = () => {
+let transporter = null;
+
+const getTransporter = () => {
+  if (transporter) return transporter;
+
+  console.log('DEBUG - Email Service Config:');
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('SMTP_HOST:', process.env.SMTP_HOST);
+  console.log('SMTP_USER:', process.env.SMTP_USER);
+
   // For development/testing, use console logging
   if (process.env.NODE_ENV === 'development' || !process.env.SMTP_HOST) {
-    return {
+    console.log('Using CONSOLE MODE (development)');
+    transporter = {
       sendMail: async (options) => {
         console.log('=== EMAIL ===');
         console.log('To:', options.to);
@@ -18,21 +28,22 @@ const createTransporter = () => {
         return { messageId: 'dev-' + Date.now() };
       }
     };
+  } else {
+    console.log('Using REAL EMAIL MODE (production)');
+    // Production configuration
+    transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
   }
 
-  // Production configuration
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
+  return transporter;
 };
-
-const transporter = createTransporter();
 
 // Send email verification email
 const sendVerificationEmail = async (email, name, verificationToken) => {
@@ -61,7 +72,7 @@ const sendVerificationEmail = async (email, name, verificationToken) => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
     console.log('Verification email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -92,7 +103,7 @@ const sendOTPEmail = async (email, otp, purpose = 'login') => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
     console.log('OTP email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -127,7 +138,7 @@ const sendWelcomeEmail = async (email, name) => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
     console.log('Welcome email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -163,7 +174,7 @@ const sendAppointmentConfirmationEmail = async (email, name, appointmentDetails)
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error sending appointment confirmation email:', error);
